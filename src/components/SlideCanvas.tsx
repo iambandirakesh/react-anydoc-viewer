@@ -25,6 +25,12 @@ export interface SlideCanvasProps {
   emptySlideMessage?: string;
   /** draws a page whose content is not a shape list (PDF) */
   renderPage?: PageRenderer | null;
+  /**
+   * Space to keep free below the slide, in pixels, because the floating toolbar
+   * overlaps the bottom of the stage. As a margin on the scaled slide it pushes
+   * the slide up by the same amount the fit calculation already reserves.
+   */
+  bottomClearance?: number;
 }
 
 const MemoSlideView = memo(SlideView);
@@ -52,6 +58,7 @@ export function SlideCanvas({
   renderSlideError,
   emptySlideMessage,
   renderPage,
+  bottomClearance = 0,
 }: SlideCanvasProps): ReactNode {
   const scaledWidth = slideWidth * scale;
   const scrollable = scrollableAxis(scaledWidth, size.width) || scrollableAxis(slideHeight * scale, size.height);
@@ -69,7 +76,11 @@ export function SlideCanvas({
       ) : slide ? (
         <div
           className="radv-canvas-inner"
-          style={{ width: `${scaledWidth}px`, height: `${slideHeight * scale}px` }}
+          style={{
+            width: `${scaledWidth}px`,
+            height: `${slideHeight * scale}px`,
+            marginBottom: bottomClearance > 0 ? `${bottomClearance}px` : undefined,
+          }}
         >
           <div
             style={{

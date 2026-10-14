@@ -202,6 +202,7 @@ export function App() {
             <select value={fit} onChange={(e) => setFit(e.target.value as FitMode)}>
               <option value="page">page</option>
               <option value="width">width</option>
+              <option value="height">height</option>
               <option value="actual">actual</option>
               <option value="none">none</option>
             </select>

@@ -213,6 +213,49 @@ With `showControls={false}` there is no Present button; drive the slideshow from
 your own UI through the handle instead — see
 [Presentation mode](#presentation-slideshow-mode).
 
+The chrome is a **small pill floating at the bottom of the stage**, centred on the
+slide, not a header bar: the document keeps the full width of the viewer and the
+slide is scaled to fit in the space left above the pill.
+
+It also **stays out of the way while reading**. The pill is hidden until the viewer
+is hovered, and in that hidden state it is inert (`pointer-events: none`), so it can
+never swallow a click meant for the document. It is not removed from the DOM: focus
+brings it back, so the keyboard path is the same either way. On a touch device
+(where there is no hover) it is always visible.
+
+Everything in the pill is short by design — previous/next, the counter, zoom out,
+the zoom-and-fit dropdown, zoom in, Present, thumbnails and fullscreen. Jumping
+straight to the first or last page is a keyboard (`Home`/`End`) and handle action
+rather than two more buttons in every reader's view, and Present is an icon whose
+full text ("Present from this slide") is its accessible name and tooltip.
+
+Zoom and fit share a single dropdown on that pill — click the percentage (it does
+not open on hover, so the pointer crossing the pill never drops a menu over the
+slide):
+
+```
+      ‹  2 / 8  ›  │  −  ┌ 67% │ ▾ ┐  +  │  ▶  ▤  ⛶
+                         └─────┴───┘
+                              │
+                      ┌───────┴────────┐
+                      │ 10%  25%  50%  │   zoom stops
+                      │ 75%  100% 125% │
+                      │ …              │
+                      ├────────────────┤
+                      │ Fit width  ✓   │   fit modes
+                      │ Fit height     │
+                      │ Fit page       │
+                      │ Actual size    │
+                      └────────────────┘
+```
+
+The percentage and the caret are one button — a divider between them, one
+accessible name, one tab stop — and it opens on click or on `Enter`, `Space`,
+`ArrowUp` and `ArrowDown`. It is a `menu` of `menuitemradio` entries, so the mode in
+effect is announced to assistive technology: arrows and `Home`/`End` move through
+the entries, and `Esc` closes it and returns focus to the percentage. Picking a percentage is a zoom (`onZoomChange`); picking a fit mode
+is a fit (`onFitChange`).
+
 Labels are fully localisable, including the slide counter, which is a function:
 
 ```tsx
@@ -255,8 +298,9 @@ background and starts from whatever slide is currently shown:
 <DocumentViewer source={file} showPresentationControl={false} />   {/* never show the button */}
 ```
 
-The toolbar gets a **Present from this slide** button unless
-`showPresentationControl={false}`. While presenting:
+The toolbar gets a **Present from this slide** button (an icon, labelled in full for
+assistive technology and on hover) unless `showPresentationControl={false}`. While
+presenting:
 
 - **click**, `Space`, `Enter`, `→`, `↓`, `PageDown` or `n` advance;
 - `←`, `↑`, `PageUp`, `Backspace` or `p` go back; `Home`/`End` jump to the ends;
@@ -413,7 +457,7 @@ component.
 | `presentation` | `boolean` | — | Controlled presentation (slideshow) mode |
 | `defaultPresentation` | `boolean` | `false` | Start in presentation mode |
 | `showPresentationControl` | `boolean` | `true` | Show the Present button in the toolbar |
-| `fit` | `"width" \| "page" \| "actual" \| "none"` | `"page"` | Initial scaling mode |
+| `fit` | `"width" \| "height" \| "page" \| "actual" \| "none"` | `"page"` | Initial scaling mode |
 | `zoom` | `number` | — | Controlled scale (`1` is 100%) |
 | `defaultZoom` | `number` | — | Uncontrolled initial scale |
 | `keyboardNavigation` | `boolean` | `true` | Enable keyboard shortcuts |

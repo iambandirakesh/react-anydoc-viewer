@@ -22,11 +22,12 @@ export type DocumentViewerErrorType = DocumentViewerError;
 /**
  * How the slide is scaled inside its container.
  * - `width` — fill the container width
+ * - `height` — fill the container height
  * - `page` — fit the whole slide inside the container (default)
  * - `actual` — 100%
  * - `none` — no automatic scaling; the container scrolls
  */
-export type FitMode = "width" | "page" | "actual" | "none";
+export type FitMode = "width" | "height" | "page" | "actual" | "none";
 
 export interface ViewerLabels {
   previous: string;
@@ -36,8 +37,11 @@ export interface ViewerLabels {
   zoomIn: string;
   zoomOut: string;
   fitWidth: string;
+  fitHeight: string;
   fitPage: string;
   actualSize: string;
+  /** label of the zoom percentage dropdown, which also holds the fit modes */
+  zoomMenu: string;
   fullscreen: string;
   exitFullscreen: string;
   present: string;

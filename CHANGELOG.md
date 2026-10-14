@@ -99,9 +99,19 @@ so no consumer is left on the wrong side of that change.
 
 **Viewer**
 
-- Toolbar (first/previous/next/last, counter, zoom in/out, fit page, fit width,
-  actual size, thumbnail toggle, fullscreen, Present), keyboard shortcuts and an
-  accessible, `radv-`-prefixed DOM with `aria-live` status.
+- Chrome rendered as a compact floating pill centred at the bottom of the stage
+  rather than a header bar, so the slide keeps the full width of the viewer:
+  previous/next, the counter, zoom in/out, the zoom **and fit** dropdown, Present,
+  the thumbnail toggle and fullscreen, plus keyboard shortcuts and an accessible,
+  `radv-`-prefixed DOM with `aria-live` status. The pill is hidden — and inert —
+  until the viewer is hovered or one of its controls has focus, and is always
+  visible where there is no hover to reveal it (touch devices).
+- One dropdown for zoom and fit, listing the conventional zoom stops (10 %–500 %)
+  and fit width/height/page and actual size together. Its trigger is a split
+  control — the percentage, a divider, a caret — and opens on click or from the
+  keyboard, uses `menuitemradio` semantics so the mode in effect is announced, and
+  never covers the slide: the fit calculation reserves the pill's height.
+- `fit="height"`, to scale a page to the height of the container.
 - Presentation (slideshow) mode: `presentation` / `defaultPresentation` /
   `onPresentationChange` / `showPresentationControl`, plus `enterPresentation`,
   `exitPresentation`, `togglePresentation` and `isPresenting` on the handle. The
@@ -134,9 +144,9 @@ so no consumer is left on the wrong side of that change.
   React `>=17` peer dependency, MIT licence.
 - `npm run test:package` builds, packs, and verifies the tarball from separate
   React 19 (ESM) and React 17 (CJS/SSR) applications, plus a consumer type-check.
-- 147 unit/component tests (parser, renderer, components, security) built on
+- 151 unit/component tests (parser, renderer, components, security) built on
   generated `.pptx`, `.docx` and `.pdf` fixtures — no third-party documents are
-  redistributed — plus 16 Playwright integration tests that drive the demo in real
+  redistributed — plus 17 Playwright integration tests that drive the demo in real
   Chrome, including a Word document laid out into pages and a PDF page rasterised
   with pdf.js in a real Web Worker.
 - An empty-slide notice is no longer rendered (as an empty `role="note"` node) in
@@ -148,6 +158,24 @@ so no consumer is left on the wrong side of that change.
 
 ### Changed during 0.1.0 development
 
+- **The chrome moved from a header bar to a small floating bottom pill, and it is
+  only shown on hover or focus.** Fit width, fit page and actual size were three
+  buttons in the header; they are now entries in the zoom dropdown, which is also
+  where a percentage can be picked directly. The first/last jump buttons left the
+  chrome to keep it narrow — `Home`/`End` and `first()`/`last()` on the handle do
+  the same thing — and Present is now an icon carrying its full text as the
+  accessible name and tooltip. Nothing was removed from the API: `fit`,
+  `onFitChange` and the `FitMode` values still work, and `ViewerLabels` gained
+  `fitHeight` and `zoomMenu`.
+- **The zoom dropdown no longer opens on hover.** It appeared when the pointer
+  rested on the percentage, which meant the pointer merely crossing the pill while
+  reading dropped a 15-item menu over the slide. The percentage and its caret now
+  read as one boxed control and open only on click (or `Enter`/`Space`/arrows).
+- **A localised presentation hint could spill out of its own pill.** The hint row
+  is `white-space: nowrap`, and its text span had no `min-width: 0`, so a flex item
+  could not shrink below its content: a longer translation (or a longer
+  `labels.exitPresentation`) overflowed the pill instead of ellipsising. The text
+  now shrinks and ellipsises, and the pill clips whatever is left.
 - **Default label copy is format-neutral**, since the same chrome now serves slides,
   document pages and PDF pages: "Loading document…", "This document could not be
   displayed", "This page is empty", "This page failed to render", "Page thumbnails".

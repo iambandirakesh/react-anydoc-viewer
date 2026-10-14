@@ -49,6 +49,11 @@ import type {
 
 const ZOOM_LADDER = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2, 3, 4];
 const STAGE_INSET = 12;
+/**
+ * Extra space kept clear at the bottom of the stage while the floating toolbar
+ * is on screen, so a fitted slide is never hidden behind it.
+ */
+const TOOLBAR_CLEARANCE = 44;
 /** how long the presentation hint stays on screen after the last activity */
 const HINT_VISIBLE_MS = 3200;
 const MAX_RENDER_ISSUES = 40;
@@ -274,19 +279,31 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
 
   const fitScale = useMemo(() => {
     if (!size.measured) return 1;
-    // A slideshow fills the viewport: no stage padding around the slide.
+    // A slideshow fills the viewport: no stage padding, and no toolbar either.
     const inset = presenting ? 0 : STAGE_INSET;
+    const bottomInset = presenting || !controlsVisible ? inset : inset + TOOLBAR_CLEARANCE;
     const availableWidth = Math.max(size.width - inset * 2, 1);
-    const availableHeight = Math.max(size.height - inset * 2, 1);
+    const availableHeight = Math.max(size.height - inset - bottomInset, 1);
     switch (fitState) {
       case "width":
         return availableWidth / slideWidth;
+      case "height":
+        return availableHeight / slideHeight;
       case "page":
         return Math.min(availableWidth / slideWidth, availableHeight / slideHeight);
       default:
         return 1;
     }
-  }, [fitState, presenting, size.height, size.measured, size.width, slideHeight, slideWidth]);
+  }, [
+    controlsVisible,
+    fitState,
+    presenting,
+    size.height,
+    size.measured,
+    size.width,
+    slideHeight,
+    slideWidth,
+  ]);
 
   const scale = internalZoom ?? fitScale;
   const onZoomChangeRef = useRef(props.onZoomChange);
@@ -542,6 +559,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
         renderSlideError={renderSlideError}
         onRenderIssue={reportIssue}
         renderPage={renderPage}
+        bottomClearance={!presenting && controlsVisible ? TOOLBAR_CLEARANCE : 0}
       />
     );
   } else {
@@ -568,35 +586,6 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
       role="region"
       aria-label={labels.viewerRegion}
     >
-      {controlsVisible && !presenting ? (
-        <ViewerToolbar
-          labels={labels}
-          slideIndex={slideIndex}
-          slideCount={slideCount}
-          zoom={scale}
-          fit={fitState}
-          thumbnailsVisible={thumbnailsVisible}
-          allowThumbnailToggle={allowThumbnailToggle ?? showThumbnails}
-          fullscreenSupported
-          isFullscreen={fullscreen.isFullscreen}
-          canZoomIn={scale < MAX_ZOOM}
-          canZoomOut={scale > MIN_ZOOM}
-          debug={debug}
-          onPrevious={goPrevious}
-          onNext={goNext}
-          onFirst={() => goToSlide(0)}
-          onLast={() => goToSlide(slideCountRef.current - 1)}
-          onZoomIn={zoomIn}
-          onZoomOut={zoomOut}
-          onFit={changeFit}
-          onToggleThumbnails={() => setThumbnailsVisible((visible) => !visible)}
-          onToggleFullscreen={fullscreen.toggle}
-          showPresentationControl={showPresentationControl}
-          presentationAvailable={presentationMode.available}
-          onPresent={presentationMode.enter}
-          onRetry={presentation.reload}
-        />
-      ) : null}
       <div className="radv-body">
         {!presenting && thumbnailsVisible && model && media && status === "ready" ? (
           <ThumbnailSidebar
@@ -617,6 +606,39 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
               diagnostics={diagnostics}
               labels={labels}
               onClose={() => setDiagnosticsOpen(false)}
+            />
+          ) : null}
+          {/*
+           * The toolbar floats over the stage (centred at the bottom) instead of
+           * taking a strip off the top, so the slide gets the full width. It is
+           * rendered last so it paints above the diagnostics panel, and the
+           * stylesheet keeps it out of sight until the viewer is hovered or one of
+           * its controls has focus.
+           */}
+          {controlsVisible && !presenting ? (
+            <ViewerToolbar
+              labels={labels}
+              slideIndex={slideIndex}
+              slideCount={slideCount}
+              zoom={scale}
+              fit={fitState}
+              explicitZoom={internalZoom !== null}
+              thumbnailsVisible={thumbnailsVisible}
+              allowThumbnailToggle={allowThumbnailToggle ?? showThumbnails}
+              isFullscreen={fullscreen.isFullscreen}
+              canZoomIn={scale < MAX_ZOOM}
+              canZoomOut={scale > MIN_ZOOM}
+              onPrevious={goPrevious}
+              onNext={goNext}
+              onZoom={setZoom}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onFit={changeFit}
+              onToggleThumbnails={() => setThumbnailsVisible((visible) => !visible)}
+              onToggleFullscreen={fullscreen.toggle}
+              showPresentationControl={showPresentationControl}
+              presentationAvailable={presentationMode.available}
+              onPresent={presentationMode.enter}
             />
           ) : null}
         </div>

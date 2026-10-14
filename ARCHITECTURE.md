@@ -154,6 +154,8 @@ where the renderer can, a labelled node — never a silent omission.
 | `measureParagraph.ts` | Measures laid-out text with a hidden mirror DOM (`kind: "layout"`), and falls back to a metrics-based estimate (`kind: "estimate"`) where no DOM is available, for example in SSR or a test environment. |
 | `DocumentViewer.tsx` | Public component: loading state machine, slide/zoom/fit state, keyboard handling, imperative handle, diagnostics, thumbnails, fullscreen. Format-agnostic: it forwards `renderPage` and maps the parsed model into `DocumentInfo`. |
 | `SlideCanvas.tsx` | Scroll container, measurement, memoised slide view, per-slide error boundary — and the one line that delegates to a format's own page renderer. |
+| `ViewerToolbar.tsx` | The chrome itself: a compact floating pill centred at the bottom of the stage, revealed by `:hover`/`:focus-within` in the stylesheet so it needs no visibility state of its own. Presentation only; every action and every piece of state belongs to `DocumentViewer`. |
+| `ZoomMenu.tsx` | The zoom percentage and its dropdown of zoom stops and fit modes. The percentage and caret are one split button that opens on click or from the keyboard (never on hover), and it only calls back — it never owns the scale. |
 
 Diagnostics reported during rendering (an undecodable image, for example) are
 buffered and flushed in an effect after the commit, because a state update during

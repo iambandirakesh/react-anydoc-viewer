@@ -59,6 +59,17 @@ function canvasOf(container: HTMLElement) {
   return within(container.querySelector(".radv-canvas") as HTMLElement);
 }
 
+/** The zoom percentage in the toolbar opens the zoom/fit dropdown. */
+function openZoomMenu() {
+  fireEvent.click(screen.getByLabelText("Zoom and fit"));
+}
+
+/** Pick an entry from that dropdown (a zoom stop or a fit mode). */
+function chooseFromZoomMenu(name: string) {
+  openZoomMenu();
+  fireEvent.click(screen.getByRole("menuitemradio", { name }));
+}
+
 describe("DocumentViewer", () => {
   it("reports render issues after the commit instead of during another render", async () => {
     const errors: unknown[][] = [];
@@ -154,8 +165,108 @@ describe("DocumentViewer", () => {
     fireEvent.click(screen.getByLabelText("Zoom out"));
     await waitFor(() => expect(ref.current?.getZoom()).toBeCloseTo(1, 5));
 
-    fireEvent.click(screen.getByLabelText("Fit to page"));
+    // The fit modes live in the dropdown next to the zoom stops, not on the bar.
+    chooseFromZoomMenu("Fit to page");
     await waitFor(() => expect(ref.current?.getZoom() ?? 0).toBeGreaterThan(0));
+  });
+
+  it("opens the zoom dropdown on click and applies a zoom stop", async () => {
+    const onZoomChange = vi.fn();
+    const ref = createRef<DocumentViewerHandle>();
+    const { container } = render(
+      <DocumentViewer ref={ref} source={twoSlides()} onZoomChange={onZoomChange} />,
+    );
+    await waitForReady(container);
+
+    const trigger = screen.getByLabelText("Zoom and fit");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    // Hovering the percentage is not enough: the menu opens on click only, so the
+    // pointer passing over the pill cannot cover the slide with a dropdown.
+    fireEvent.mouseEnter(trigger.parentElement as HTMLElement);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    // Clicking opens it, and clicking the trigger again closes it.
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).toBeTruthy();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "200%" }));
+    await waitFor(() => expect(ref.current?.getZoom()).toBeCloseTo(2, 5));
+    expect(onZoomChange).toHaveBeenLastCalledWith(2);
+    // Choosing closes the menu: it is a picker, not a panel.
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("marks the fit mode in effect and switches fit modes from the dropdown", async () => {
+    const onFitChange = vi.fn();
+    const { container } = render(
+      <DocumentViewer source={twoSlides()} fit="page" onFitChange={onFitChange} />,
+    );
+    await waitForReady(container);
+
+    openZoomMenu();
+    expect(screen.getByRole("menuitemradio", { name: "Fit to page" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    // While a fit mode decides the scale, no percentage is marked as chosen.
+    expect(screen.getByRole("menuitemradio", { name: "100%" }).getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Fit to height" }));
+    await waitFor(() => expect(onFitChange).toHaveBeenLastCalledWith("height"));
+
+    openZoomMenu();
+    expect(screen.getByRole("menuitemradio", { name: "Fit to height" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    // Picking a percentage is a zoom, not a fit: the fit mode in effect is kept.
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "50%" }));
+    await waitFor(() => expect(container.querySelector(".radv-zoom")?.textContent).toBe("50%"));
+    expect(onFitChange).toHaveBeenCalledTimes(1);
+    openZoomMenu();
+    expect(screen.getByRole("menuitemradio", { name: "50%" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("fills the container height with fit=\"height\"", async () => {
+    const pageFit = createRef<DocumentViewerHandle>();
+    const first = render(<DocumentViewer ref={pageFit} source={twoSlides()} fit="page" />);
+    await waitForReady(first.container);
+    const pageZoom = pageFit.current?.getZoom() ?? 0;
+
+    const heightFit = createRef<DocumentViewerHandle>();
+    const second = render(<DocumentViewer ref={heightFit} source={twoSlides()} fit="height" />);
+    await waitForReady(second.container);
+    // A 16:9 slide in a 900x600 stage is width-bound when it fits the page, so
+    // filling the height means a larger scale — and a horizontally scrolling one.
+    expect(heightFit.current?.getZoom() ?? 0).toBeGreaterThan(pageZoom);
+    expect(second.container.querySelector(".radv-canvas-scroll")).not.toBeNull();
+  });
+
+  it("opens the zoom dropdown from the keyboard and closes it with Escape", async () => {
+    const { container } = render(<DocumentViewer source={twoSlides()} />);
+    await waitForReady(container);
+
+    const trigger = screen.getByLabelText("Zoom and fit");
+    trigger.focus();
+    // ArrowDown opens the menu on the choice in effect, without a pointer.
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const checked = screen.getByRole("menuitemradio", { name: "Fit to page" });
+    expect(document.activeElement).toBe(checked);
+
+    // Arrows move through the entries from wherever focus is.
+    fireEvent.keyDown(checked, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Fit to height" }));
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("loads a presentation from a URL, respecting the download limit", async () => {

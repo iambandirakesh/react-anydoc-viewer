@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { FitMode, ViewerLabels } from "../types/public";
+import { ZoomMenu } from "./ZoomMenu";
 
 export interface ViewerToolbarProps {
   labels: ViewerLabels;
@@ -7,40 +8,46 @@ export interface ViewerToolbarProps {
   slideCount: number;
   zoom: number;
   fit: FitMode;
+  /** true when the scale was chosen by hand, so no fit item is marked */
+  explicitZoom: boolean;
   thumbnailsVisible: boolean;
   allowThumbnailToggle: boolean;
-  fullscreenSupported: boolean;
   isFullscreen: boolean;
   showPresentationControl: boolean;
   presentationAvailable: boolean;
-  onPresent: () => void;
   canZoomOut: boolean;
   canZoomIn: boolean;
-  debug: boolean;
   onPrevious: () => void;
   onNext: () => void;
-  onFirst: () => void;
-  onLast: () => void;
+  onZoom: (scale: number) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: (fit: FitMode) => void;
   onToggleThumbnails: () => void;
   onToggleFullscreen: () => void;
-  onRetry: () => void;
+  onPresent: () => void;
   extra?: ReactNode;
 }
 
+/**
+ * The viewer chrome: a small floating pill centred at the bottom of the stage, so
+ * the slide keeps the full width instead of losing a strip to a header bar. Zoom
+ * and fit share one dropdown (see {@link ZoomMenu}) rather than a button per mode.
+ *
+ * The pill is shown while the viewer is hovered or one of its controls has focus
+ * (see the stylesheet), so it stays out of the way while reading. Everything in it
+ * is short on purpose: jumping to the first or last page stays available through
+ * the keyboard (`Home`/`End`) and {@link DocumentViewerHandle} rather than costing
+ * the pill two more buttons in every reader's view.
+ */
 export function ViewerToolbar(props: ViewerToolbarProps): ReactNode {
   const {
     labels,
     slideIndex,
     slideCount,
-    zoom,
-    fit,
-    allowThumbnailToggle,
     thumbnailsVisible,
-    fullscreenSupported,
     isFullscreen,
+    allowThumbnailToggle,
   } = props;
 
   const atStart = slideIndex <= 0;
@@ -49,16 +56,6 @@ export function ViewerToolbar(props: ViewerToolbarProps): ReactNode {
   return (
     <div className="radv-toolbar" role="toolbar" aria-label={labels.viewerRegion}>
       <div className="radv-toolbar-group">
-        <button
-          type="button"
-          className="radv-btn"
-          onClick={props.onFirst}
-          disabled={atStart}
-          aria-label={labels.first}
-          title={labels.first}
-        >
-          <span aria-hidden="true">«</span>
-        </button>
         <button
           type="button"
           className="radv-btn"
@@ -82,17 +79,9 @@ export function ViewerToolbar(props: ViewerToolbarProps): ReactNode {
         >
           <span aria-hidden="true">›</span>
         </button>
-        <button
-          type="button"
-          className="radv-btn"
-          onClick={props.onLast}
-          disabled={atEnd}
-          aria-label={labels.last}
-          title={labels.last}
-        >
-          <span aria-hidden="true">»</span>
-        </button>
       </div>
+
+      <span className="radv-toolbar-divider" aria-hidden="true" />
 
       <div className="radv-toolbar-group">
         <button
@@ -105,9 +94,14 @@ export function ViewerToolbar(props: ViewerToolbarProps): ReactNode {
         >
           <span aria-hidden="true">−</span>
         </button>
-        <span className="radv-zoom" aria-live="polite">
-          {Math.round(zoom * 100)}%
-        </span>
+        <ZoomMenu
+          labels={labels}
+          zoom={props.zoom}
+          fit={props.fit}
+          explicitZoom={props.explicitZoom}
+          onZoom={props.onZoom}
+          onFit={props.onFit}
+        />
         <button
           type="button"
           className="radv-btn"
@@ -118,40 +112,17 @@ export function ViewerToolbar(props: ViewerToolbarProps): ReactNode {
         >
           <span aria-hidden="true">+</span>
         </button>
-        <button
-          type="button"
-          className={`radv-btn${fit === "page" ? " radv-btn-active" : ""}`}
-          onClick={() => props.onFit("page")}
-          aria-label={labels.fitPage}
-          aria-pressed={fit === "page"}
-          title={labels.fitPage}
-        >
-          <span aria-hidden="true">⤢</span>
-        </button>
-        <button
-          type="button"
-          className={`radv-btn${fit === "width" ? " radv-btn-active" : ""}`}
-          onClick={() => props.onFit("width")}
-          aria-label={labels.fitWidth}
-          aria-pressed={fit === "width"}
-          title={labels.fitWidth}
-        >
-          <span aria-hidden="true">↔</span>
-        </button>
-        <button
-          type="button"
-          className={`radv-btn${fit === "actual" ? " radv-btn-active" : ""}`}
-          onClick={() => props.onFit("actual")}
-          aria-label={labels.actualSize}
-          aria-pressed={fit === "actual"}
-          title={labels.actualSize}
-        >
-          <span aria-hidden="true">1:1</span>
-        </button>
       </div>
+
+      <span className="radv-toolbar-divider" aria-hidden="true" />
 
       <div className="radv-toolbar-group radv-toolbar-end">
         {props.extra}
+        {/*
+         * Icon only: the pill has to stay narrow, and the full "present from this
+         * slide" text is too long for it. It remains the accessible name and the
+         * tooltip, so a keyboard or screen-reader user still hears it in full.
+         */}
         {props.showPresentationControl ? (
           <button
             type="button"
@@ -162,7 +133,6 @@ export function ViewerToolbar(props: ViewerToolbarProps): ReactNode {
             title={labels.present}
           >
             <span aria-hidden="true">▶</span>
-            <span className="radv-btn-label">{labels.present}</span>
           </button>
         ) : null}
         {allowThumbnailToggle ? (
@@ -177,18 +147,16 @@ export function ViewerToolbar(props: ViewerToolbarProps): ReactNode {
             <span aria-hidden="true">▤</span>
           </button>
         ) : null}
-        {fullscreenSupported ? (
-          <button
-            type="button"
-            className={`radv-btn${isFullscreen ? " radv-btn-active" : ""}`}
-            onClick={props.onToggleFullscreen}
-            aria-label={isFullscreen ? labels.exitFullscreen : labels.fullscreen}
-            aria-pressed={isFullscreen}
-            title={isFullscreen ? labels.exitFullscreen : labels.fullscreen}
-          >
-            <span aria-hidden="true">{isFullscreen ? "⤡" : "⛶"}</span>
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={`radv-btn${isFullscreen ? " radv-btn-active" : ""}`}
+          onClick={props.onToggleFullscreen}
+          aria-label={isFullscreen ? labels.exitFullscreen : labels.fullscreen}
+          aria-pressed={isFullscreen}
+          title={isFullscreen ? labels.exitFullscreen : labels.fullscreen}
+        >
+          <span aria-hidden="true">{isFullscreen ? "⤡" : "⛶"}</span>
+        </button>
       </div>
     </div>
   );

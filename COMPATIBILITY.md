@@ -199,9 +199,11 @@ ships; the viewer does not attempt to read PDF content streams itself.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| First/previous/next/last, slide counter | Implemented | Counter is `aria-live="polite"` |
+| Previous/next and the slide counter | Implemented | Counter is `aria-live="polite"`; first/last are keyboard (`Home`/`End`) and handle actions rather than pill buttons |
+| Floating toolbar, shown on hover | Implemented | A pill centred at the bottom of the stage; it overlays the slide instead of taking a header strip, the fit calculation reserves its height, and it is hidden (and inert) until the viewer is hovered or one of its controls has focus. Touch devices show it always |
 | Thumbnails (click to navigate, lazy-mounted) | Implemented | Toggleable at runtime |
-| Zoom in/out, fit page, fit width, actual size | Implemented | Zoom ladder 25 %–400 % via buttons, 10 %–800 % via `setZoom` |
+| Zoom in/out, and one dropdown of zoom stops plus fit modes | Implemented | The dropdown offers the conventional stops (10 %–500 %) and fit width/height/page/actual size; the ± buttons step a finer ladder (25 %–400 %) and `setZoom` accepts 10 %–800 % |
+| Zoom and fit dropdown on click and keyboard | Implemented | Opens on click (not on hover) so a pointer crossing the pill cannot cover the slide; the percentage and its caret are one split button; `menuitemradio` semantics with the mode in effect marked; `Esc` closes and returns focus to the trigger |
 | Fullscreen | Implemented | Native API first, in-page overlay fallback; `Esc` exits |
 | Presentation (slideshow) mode | Implemented | Chrome and sidebar removed, black stage, click/Space/arrow/Page keys advance, `Esc` exits, controlled or uncontrolled |
 | Keyboard navigation | Implemented | Arrows, PageUp/Down, Space, Home, End, `n`/`p`, `+`/`-`, `0`, `f` |
@@ -213,8 +215,8 @@ ships; the viewer does not attempt to read PDF content streams itself.
 
 ## Test coverage behind these claims
 
-The matrix above is backed by the automated suite (`npm test`, 147 tests, and
-`npm run test:browser`, 16 Playwright tests in real Chrome) plus the browser demo.
+The matrix above is backed by the automated suite (`npm test`, 151 tests, and
+`npm run test:browser`, 17 Playwright tests in real Chrome) plus the browser demo.
 Coverage includes: format detection from bytes, slide order from relationships,
 theme colour resolution and modifiers, table merges, chart series and
 doughnut hole sizes, group transforms, custom geometry, bullets from master styles,
