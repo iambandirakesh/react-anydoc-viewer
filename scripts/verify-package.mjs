@@ -200,6 +200,24 @@ assert.ok(host.querySelector("[aria-label='Next slide']"), "accessible navigatio
 // Thumbnails from the built package.
 assert.ok(host.querySelector(".radv-thumb-item"), "thumbnail sidebar rendered");
 
+// The zoom/fit dropdown is the newest part of the chrome, so the published bundle
+// is made to prove it is there and that it opens on a click rather than on hover.
+const zoomTrigger = host.querySelector("[aria-label='Zoom and fit']");
+assert.ok(zoomTrigger, "zoom and fit dropdown rendered");
+assert.equal(zoomTrigger.getAttribute("aria-expanded"), "false", "dropdown starts closed");
+assert.ok(!host.querySelector(".radv-menu"), "no menu is rendered before the click");
+await act(async () => {
+  zoomTrigger.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+});
+assert.equal(zoomTrigger.getAttribute("aria-expanded"), "true", "clicking the percentage opens the menu");
+const menuItems = host.querySelectorAll("[role='menuitemradio']");
+assert.equal(menuItems.length, 15, "the menu lists 11 zoom stops and 4 fit modes");
+assert.match(host.textContent, /Fit to height/, "the new fit mode is offered by the published build");
+await act(async () => {
+  zoomTrigger.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+});
+assert.equal(zoomTrigger.getAttribute("aria-expanded"), "false", "a second click closes the menu");
+
 // Error model is exported and usable.
 const err = new DocumentViewerError("NOT_A_PRESENTATION", "nope");
 assert.ok(isDocumentViewerError(err), "error helpers exported");
@@ -410,7 +428,17 @@ export const legacyError: PPTViewerError = new PPTViewerError("NO_SLIDES", "empt
 export const stillGuarded = isPPTViewerError(legacyError);
 `,
   );
-  install(typecheckDir, tarball, ["react@^19", "react-dom@^19", "typescript@^5.9"]);
+  // React's own types must be installed explicitly. Without them TypeScript walks
+  // up the directory tree and finds *this repository's* `node_modules/@types/react`,
+  // so the check would pass in the repo and fail everywhere else (TS7016) — proving
+  // nothing about the published declarations.
+  install(typecheckDir, tarball, [
+    "react@^19",
+    "react-dom@^19",
+    "@types/react@^19",
+    "@types/react-dom@^19",
+    "typescript@^5.9",
+  ]);
   run("npx", ["tsc", "-p", "tsconfig.json"], { cwd: typecheckDir });
   process.stdout.write("  consumer type-check: OK\n");
 
