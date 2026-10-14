@@ -1,0 +1,610 @@
+/*
+ * react-anydoc-viewer styles.
+ *
+ * All classes are prefixed with `radv-` so they cannot collide with application
+ * styles. Colours come from CSS custom properties, so a host app can re-theme
+ * the chrome without overriding rules.
+ */
+
+.radv-root {
+  --radv-chrome: #f5f6f8;
+  --radv-chrome-border: #d8dade;
+  --radv-text: #202124;
+  --radv-text-muted: #5f6368;
+  --radv-btn-bg: #ffffff;
+  --radv-btn-hover: #eceef1;
+  --radv-accent: #3b6fd4;
+  --radv-stage: #6d7176;
+  --radv-notice-bg: rgba(255, 255, 255, 0.94);
+  --radv-notice-text: #3c4043;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--radv-chrome);
+  color: var(--radv-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+  outline: none;
+}
+
+.radv-root:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--radv-accent);
+}
+
+/*
+ * Fallback fullscreen. Used when the Fullscreen API is unavailable, blocked by a
+ * permissions policy, or silently ignored (embedded webviews). The viewer expands
+ * itself to the viewport instead of leaving the button without an effect.
+ */
+.radv-root-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  width: auto;
+  height: auto;
+}
+
+.radv-root-overlay .radv-canvas {
+  overscroll-behavior: contain;
+}
+
+/*
+ * Presentation (slideshow) mode.
+ *
+ * The chrome is removed from the DOM, not just hidden, so the slide gets the whole
+ * viewport and nothing is focusable behind it. The stage goes black like a real
+ * slideshow and the slide is scaled to fit it exactly.
+ */
+.radv-root-presenting {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  width: auto;
+  height: auto;
+  background: #000;
+  cursor: default;
+}
+
+.radv-root-presenting .radv-body {
+  background: #000;
+}
+
+.radv-root-presenting .radv-stage {
+  background: #000;
+}
+
+.radv-root-presenting .radv-canvas {
+  overscroll-behavior: contain;
+  background: #000;
+}
+
+.radv-present-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(96%, 640px);
+  padding: 5px 6px 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(20, 22, 25, 0.86);
+  color: #f1f3f4;
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+
+.radv-present-hint-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.radv-present-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.radv-present-counter {
+  flex: 0 0 auto;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  font-variant-numeric: tabular-nums;
+  color: rgba(241, 243, 244, 0.72);
+}
+
+.radv-present-hint .radv-btn {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  font-size: 11px;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  color: #f1f3f4;
+}
+
+.radv-present-hint .radv-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 520px) {
+  .radv-present-text {
+    display: none;
+  }
+}
+
+/* The Present control carries a label, so it reads as an action, not an icon. */
+.radv-btn-present {
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.radv-theme-dark {
+  --radv-chrome: #1f2124;
+  --radv-chrome-border: #34373b;
+  --radv-text: #e8eaed;
+  --radv-text-muted: #9aa0a6;
+  --radv-btn-bg: #2a2d31;
+  --radv-btn-hover: #383c41;
+  --radv-accent: #8ab4f8;
+  --radv-stage: #101112;
+  --radv-notice-bg: rgba(32, 33, 36, 0.94);
+  --radv-notice-text: #e8eaed;
+}
+
+/* ------------------------------------------------------------- toolbar */
+
+.radv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--radv-chrome-border);
+  background: var(--radv-chrome);
+  z-index: 2;
+}
+
+.radv-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.radv-toolbar-end {
+  margin-left: auto;
+}
+
+.radv-counter,
+.radv-zoom {
+  min-width: 58px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--radv-text-muted);
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.radv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--radv-chrome-border);
+  border-radius: 6px;
+  background: var(--radv-btn-bg);
+  color: var(--radv-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.radv-btn:hover:not(:disabled) {
+  background: var(--radv-btn-hover);
+}
+
+.radv-btn:focus-visible {
+  outline: 2px solid var(--radv-accent);
+  outline-offset: 1px;
+}
+
+.radv-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.radv-btn-active {
+  border-color: var(--radv-accent);
+  color: var(--radv-accent);
+}
+
+.radv-btn-small {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+}
+
+.radv-btn-primary {
+  background: var(--radv-accent);
+  border-color: var(--radv-accent);
+  color: #ffffff;
+  padding: 0 14px;
+  height: 30px;
+  margin-top: 8px;
+}
+
+/* ---------------------------------------------------------------- body */
+
+.radv-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.radv-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* -------------------------------------------------------------- canvas */
+
+.radv-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+  background: var(--radv-stage);
+  overflow: hidden;
+}
+
+.radv-canvas-scroll {
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+}
+
+.radv-canvas-inner {
+  position: relative;
+  flex: 0 0 auto;
+  background: #ffffff;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.32);
+  /* Keep the slide itself always light: it is a document, not app chrome. */
+  color-scheme: light;
+}
+
+.radv-slide {
+  position: absolute;
+  inset: 0;
+  user-select: text;
+}
+
+/*
+ * The slide is an HTML document surface: user-agent margins on block elements
+ * would break the absolute geometry of every text body, so they are removed
+ * here as well as in the renderer.
+ */
+.radv-slide p,
+.radv-slide ul,
+.radv-slide ol,
+.radv-slide h1,
+.radv-slide h2,
+.radv-slide h3 {
+  margin: 0;
+}
+
+.radv-slide img {
+  max-width: none;
+}
+
+.radv-empty-slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9aa0a6;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------- statuses */
+
+.radv-status {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--radv-text);
+}
+
+.radv-status-error {
+  align-items: center;
+}
+
+.radv-error-message {
+  margin: 0;
+  max-width: 460px;
+  color: var(--radv-text-muted);
+}
+
+.radv-error-detail {
+  margin: 0;
+  max-width: 460px;
+  font-size: 12px;
+  color: var(--radv-text-muted);
+  word-break: break-word;
+}
+
+.radv-error-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.16);
+}
+
+.radv-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--radv-chrome-border);
+  border-top-color: var(--radv-accent);
+  animation: radv-spin 900ms linear infinite;
+}
+
+@keyframes radv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radv-spinner {
+    animation-duration: 2400ms;
+  }
+}
+
+.radv-notice {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--radv-notice-bg);
+  color: var(--radv-notice-text);
+  text-align: center;
+  max-width: 420px;
+}
+
+.radv-slide-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  text-align: center;
+  background: rgba(255, 240, 240, 0.94);
+  color: #b3261e;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+/* --------------------------------------------------------- thumbnails */
+
+.radv-thumbnails {
+  flex: 0 0 auto;
+  width: 172px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--radv-chrome-border);
+  background: var(--radv-chrome);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radv-thumb-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.radv-thumb-item:hover {
+  background: var(--radv-btn-hover);
+}
+
+.radv-thumb-item:focus-visible {
+  outline: 2px solid var(--radv-accent);
+  outline-offset: 1px;
+}
+
+.radv-thumb-active {
+  border-color: var(--radv-accent);
+  background: var(--radv-btn-hover);
+}
+
+.radv-thumb-number {
+  min-width: 18px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--radv-text-muted);
+  padding-top: 2px;
+}
+
+.radv-thumb-frame {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid var(--radv-chrome-border);
+  box-sizing: border-box;
+}
+
+.radv-thumb-slot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.radv-thumb-scale {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+  display: block;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------- diagnostics */
+
+.radv-diagnostics {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: min(420px, calc(100% - 16px));
+  max-height: 46%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--radv-chrome-border);
+  border-radius: 8px;
+  background: var(--radv-notice-bg);
+  color: var(--radv-notice-text);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+  z-index: 3;
+  overflow: hidden;
+}
+
+.radv-diagnostics-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--radv-chrome-border);
+}
+
+.radv-diagnostics-count {
+  color: var(--radv-text-muted);
+}
+
+.radv-diagnostics-header .radv-btn {
+  margin-left: auto;
+}
+
+.radv-diagnostics-empty {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--radv-text-muted);
+}
+
+.radv-diagnostics-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+}
+
+.radv-diagnostic {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 6px 12px;
+  border-left: 3px solid transparent;
+}
+
+.radv-diagnostic-error {
+  border-left-color: #d93025;
+}
+
+.radv-diagnostic-warning {
+  border-left-color: #f9ab00;
+}
+
+.radv-diagnostic-info {
+  border-left-color: var(--radv-accent);
+}
+
+.radv-diagnostic-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--radv-text-muted);
+}
+
+.radv-diagnostic-message {
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.radv-diagnostic-slide {
+  font-size: 11px;
+  color: var(--radv-text-muted);
+}
+
+/* ------------------------------------------------------- responsive */
+
+@media (max-width: 640px) {
+  .radv-thumbnails {
+    width: 112px;
+  }
+
+  .radv-counter,
+  .radv-zoom {
+    min-width: 46px;
+  }
+
+  .radv-canvas {
+    padding: 6px;
+  }
+}
+
+@media print {
+  .radv-toolbar,
+  .radv-thumbnails,
+  .radv-diagnostics {
+    display: none !important;
+  }
+
+  .radv-canvas {
+    background: #ffffff;
+    padding: 0;
+  }
+}

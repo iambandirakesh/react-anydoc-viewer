@@ -1,0 +1,262 @@
+:root {
+  color-scheme: light dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.demo {
+  --bg: #f6f8fb;
+  --panel: #ffffff;
+  --text: #17202a;
+  --muted: #5b6b7c;
+  --border: #dde5ee;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.demo[data-theme="dark"] {
+  --bg: #10151c;
+  --panel: #161d26;
+  --text: #e8eef6;
+  --muted: #9fb0c2;
+  --border: #24303d;
+}
+
+.demo__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.demo__header h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.demo__header p {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.demo__header code {
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(120, 140, 170, 0.16);
+}
+
+.demo__header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.demo__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.demo__button:hover {
+  border-color: #4472c4;
+}
+
+.demo__button--primary {
+  border-color: transparent;
+  background: #4472c4;
+  color: #fff;
+}
+
+.demo__button input[type="file"] {
+  display: none;
+}
+
+.demo__body {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.demo__panel {
+  overflow: auto;
+  padding: 16px;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.demo__panel h2 {
+  margin: 18px 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.demo__panel h2:first-child {
+  margin-top: 0;
+}
+
+.demo__check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.demo__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.demo__field select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.demo__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.demo__row .demo__button {
+  padding: 5px 9px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.demo__stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.demo__stats dt {
+  color: var(--muted);
+}
+
+.demo__stats dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.demo__code {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(120, 140, 170, 0.1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.demo__hint,
+.demo__build-error {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.demo__build-error {
+  color: #c0392b;
+}
+
+.demo__stage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  padding: 16px;
+}
+
+.demo__stage > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.demo__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.demo__empty p {
+  margin: 0;
+}
+
+.demo__drop {
+  position: absolute;
+  inset: 16px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed #4472c4;
+  border-radius: 12px;
+  background: rgba(68, 114, 196, 0.12);
+  color: #2a5599;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .demo__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .demo__panel {
+    max-height: 44vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}

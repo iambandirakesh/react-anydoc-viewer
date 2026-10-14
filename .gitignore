@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.vite/
+playwright-report/
+test-results/
+.tmp-package-verify/
+*.tgz
+
+# Local development artifacts
+.dev-demo.log
+.dev-demo.pid
+.freebuff/
