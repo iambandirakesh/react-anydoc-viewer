@@ -101,6 +101,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
     fetchOptions,
     maxDownloadBytes,
     pdfWorkerSrc,
+    contentHint,
     renderSlideError,
     renderLoader,
     renderError,
@@ -164,6 +165,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
     fetchOptions,
     maxDownloadBytes,
     pdfWorkerSrc,
+    contentHint,
     onLoad: handleLoaded,
     onError: (error) => onErrorRef.current?.(error),
     onDiagnostics: (diagnostics) => onDiagnosticsRef.current?.(diagnostics),
@@ -654,7 +656,10 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
           </span>
           <button
             type="button"
-            className="radv-btn radv-btn-small"
+            /* `radv-present-exit` is load-bearing: the pill sits on black, so its
+               button deliberately overrides the theme's hover colour, and the
+               class is what lets those rules win the cascade. */
+            className="radv-btn radv-btn-small radv-present-exit"
             onClick={(event) => {
               event.stopPropagation();
               presentationMode.exit();

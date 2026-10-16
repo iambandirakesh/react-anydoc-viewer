@@ -114,6 +114,7 @@ export function SlideCanvas({
                   scale,
                   interactive: true,
                   media,
+                  labels,
                   warn: onRenderIssue ?? (() => undefined),
                 })
               ) : (

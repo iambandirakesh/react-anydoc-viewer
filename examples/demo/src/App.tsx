@@ -8,6 +8,7 @@
 
 import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
+  ACCEPT_ATTRIBUTE,
   DocumentViewer,
   detectPdfEngine,
   type FitMode,
@@ -27,20 +28,14 @@ import {
 
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const PDF_MIME = "application/pdf";
-/** Everything the viewer opens, for the file picker. */
-const ACCEPT = [
-  ".pptx",
-  ".docx",
-  ".pdf",
-  PPTX_MIME,
-  DOCX_MIME,
-  PDF_MIME,
-].join(",");
 
 const FORMAT_LABELS: Record<string, string> = {
   pptx: "PowerPoint presentation",
   docx: "Word document",
   pdf: "PDF document",
+  image: "image",
+  csv: "delimited text table",
+  text: "text file",
 };
 
 /**
@@ -153,8 +148,9 @@ export function App() {
         <div>
           <h1>react-anydoc-viewer</h1>
           <p>
-            A free, watermark-free React viewer for <code>.pptx</code>, <code>.docx</code> and <code>.pdf</code> files.
-            Everything renders from the file in your browser — no server, no API key, no conversion service.
+            A free, watermark-free React viewer for <code>.pptx</code>, <code>.docx</code>, <code>.pdf</code>,
+            image, <code>.csv</code> and text files. Everything renders from the file in your browser — no server,
+            no API key, no conversion service.
           </p>
         </div>
         <div className="demo__header-actions">
@@ -169,7 +165,9 @@ export function App() {
           </button>
           <label className="demo__button">
             Open a file
-            <input type="file" accept={ACCEPT} onChange={onPick} />
+            {/* The picker's filter comes from the library, so it can never disagree
+                with what the viewer actually opens. */}
+            <input type="file" accept={ACCEPT_ATTRIBUTE} onChange={onPick} />
           </label>
         </div>
       </header>
@@ -265,9 +263,12 @@ export function App() {
           <p className="demo__hint">
             Every sample is generated in the browser. The deck includes text, shapes, images, a group, a table,
             charts, an empty slide and deliberately unsupported content; the Word document adds headings, lists, a
-            merged table, a picture and page breaks; the PDF is rasterised page by page with pdf.js. Turn on debug mode
-            to read the diagnostics. Presentation mode hides every control and fills the screen — click or press Space
-            to advance, Esc to come back.
+            merged table, a picture and page breaks; the PDF is rasterised page by page with pdf.js. Images, delimited
+            text and text files open as pages too — drop one in and turn on debug mode to read the diagnostics, which
+            explain how a text file was classified and, for a table, which delimiter was detected. Presentation mode
+            hides every control and fills the screen — click or press Space to advance, Esc to come back. An
+            <code>.html</code> file is shown as its source text, like any other text file: nothing in it is ever
+            executed and it is never put in a frame.
           </p>
         </aside>
 
@@ -299,7 +300,7 @@ export function App() {
             />
           ) : (
             <div className="demo__empty">
-              <p>Drop a .pptx, .docx or .pdf file here, or</p>
+              <p>Drop a .pptx, .docx, .pdf, image, .csv or text file here, or</p>
               <button type="button" className="demo__button demo__button--primary" onClick={loadSample}>
                 load the sample deck
               </button>

@@ -11,6 +11,7 @@ import { ArchiveError, readArchive, type ArchiveLimits } from "./archive";
 import { XmlError } from "./xml";
 import { parsePresentationArchive, type ParsedPresentation } from "./presentation";
 import type { PdfJsLoader } from "./pdf";
+import type { PlainTextKind } from "./plaintext/classify";
 import type { ParagraphMeasurer } from "./docx/model";
 
 export type ViewerSource = File | Blob | ArrayBuffer | Uint8Array | string | URL;
@@ -29,6 +30,8 @@ export interface LoadOptions {
   loadPdfJs?: PdfJsLoader;
   /** overrides DOCX text measurement (tests) */
   measureParagraph?: ParagraphMeasurer;
+  /** how to read an ambiguous text file (see `DocumentParseOptions.contentHint`) */
+  contentHint?: PlainTextKind;
 }
 
 const DEFAULT_MAX_DOWNLOAD = 128 * 1024 * 1024;
@@ -155,6 +158,10 @@ export function normalizeError(error: unknown): DocumentViewerError {
         return new DocumentViewerError("NOT_A_PRESENTATION", error.message, { cause: error });
       case "ENCRYPTED":
         return new DocumentViewerError("ENCRYPTED", error.message, { cause: error });
+      case "LEGACY_BINARY":
+        // A recognised Office file in a format the viewer does not render: the
+        // same class of answer as a spreadsheet, not a load failure.
+        return new DocumentViewerError("UNSUPPORTED_FORMAT", error.message, { cause: error });
       case "ARCHIVE_LIMIT_EXCEEDED":
         return new DocumentViewerError("LIMIT_EXCEEDED", error.message, { cause: error });
       case "CORRUPT_ARCHIVE":
