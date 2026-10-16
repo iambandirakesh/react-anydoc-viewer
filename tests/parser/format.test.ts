@@ -70,14 +70,24 @@ describe("detectFormat", () => {
     ).toBe("pptx");
   });
 
-  it("reports spreadsheets, unknown bytes and legacy binaries separately", () => {
+  it("reports spreadsheets, binary bytes and legacy binaries separately", () => {
     const spreadsheet = zipSync({
       "[Content_Types].xml": strToU8("<Types/>"),
       "xl/workbook.xml": strToU8("<workbook/>"),
     });
     expect(detectFormat(spreadsheet)).toBe("unknown");
-    expect(detectFormat(strToU8("not a document"))).toBe("unknown");
+    // Binary bytes are not text: the text detector must not claim them.
+    expect(detectFormat(bytes(1, 2, 3, 4, 5, 6, 7, 8))).toBe("unknown");
+    expect(detectFormat(bytes(9, 9, 9, 9))).toBe("unknown");
     expect(detectFormat(bytes(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1))).toBe("legacy");
+  });
+
+  it("recognises a text file from its bytes, since text has no signature", () => {
+    // `.txt`, `.csv` and `.json` are all "bytes that decode as text"; the reading
+    // is chosen by content, and the file name is never consulted.
+    expect(detectFormat(strToU8("a plain note, with a comma"))).toBe("text");
+    expect(detectFormat(strToU8("a,b,c\n1,2,3\n4,5,6\n"))).toBe("csv");
+    expect(detectFormat(strToU8('{"a":1}'))).toBe("text");
   });
 
   it("does not confuse the two OPC formats", () => {

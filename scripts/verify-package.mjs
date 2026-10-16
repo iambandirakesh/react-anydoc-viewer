@@ -155,6 +155,9 @@ const {
   PPTViewerError,
   isPPTViewerError,
   SUPPORTED_FORMATS,
+  SUPPORTED_EXTENSIONS,
+  ACCEPT_ATTRIBUTE,
+  missingDescriptors,
 } = await import("react-anydoc-viewer");
 
 assert.ok(Array.isArray(supportedPresetNames()) && supportedPresetNames().length > 40, "preset list exported");
@@ -165,7 +168,22 @@ assert.match(String(DocumentViewer.$$typeof), /react\.forward_ref/, "DocumentVie
 assert.equal(PPTViewer, DocumentViewer, "PPTViewer is an alias of the same component");
 assert.equal(PPTViewerError, DocumentViewerError, "PPTViewerError is the same class");
 assert.equal(isPPTViewerError, isDocumentViewerError, "isPPTViewerError is the same guard");
-assert.deepEqual(SUPPORTED_FORMATS, ["pptx", "docx", "pdf"], "three formats are advertised");
+assert.deepEqual(
+  SUPPORTED_FORMATS,
+  ["pptx", "docx", "pdf", "image", "csv", "text"],
+  "the advertised formats are the implemented ones",
+);
+// The format table is the single source of truth, so a format cannot be
+// advertised without an entry (extensions, MIME types) next to it.
+assert.deepEqual(missingDescriptors(), [], "every advertised format has a descriptor");
+assert.ok(
+  SUPPORTED_EXTENSIONS.includes(".pptx") && SUPPORTED_EXTENSIONS.includes(".png"),
+  "the extension list is exported and dot-prefixed",
+);
+assert.ok(
+  ACCEPT_ATTRIBUTE.includes(".pptx") && ACCEPT_ATTRIBUTE.includes("application/pdf"),
+  "the accept attribute is ready to paste into an <input type=file>",
+);
 
 const errors = [];
 const host = window.document.createElement("div");
