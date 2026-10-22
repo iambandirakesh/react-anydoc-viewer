@@ -25,6 +25,13 @@ export interface MeasurerHandle {
   kind: "layout" | "estimate";
 }
 
+/**
+ * Paragraphs laid out per pass. A document is measured in slices this size so a
+ * book-length file cannot build every probe at once, and each slice still costs a
+ * single forced layout instead of one per paragraph.
+ */
+const MEASURE_PASS_LIMIT = 4000;
+
 /** A one-line paragraph measured at this font size must land in this band. */
 const CALIBRATION_FONT_PX = 100;
 const CALIBRATION_MIN = 40;
@@ -85,7 +92,7 @@ export function createDomMeasurer(): MeasurerHandle | null {
     "position:absolute;left:-100000px;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;";
   document.body.appendChild(host);
 
-  const probe = (body: DocxParagraphBlock["text"], widthPx: number): number => {
+  const buildProbe = (body: DocxParagraphBlock["text"], widthPx: number): HTMLElement => {
     const wrapper = document.createElement("div");
     Object.assign(wrapper.style, textContainerStyle(body));
     wrapper.style.width = `${widthPx}px`;
@@ -110,10 +117,41 @@ export function createDomMeasurer(): MeasurerHandle | null {
       }
     }
     wrapper.appendChild(element);
+    return wrapper;
+  };
+
+  /** One paragraph: append, read, remove. */
+  const probe = (body: DocxParagraphBlock["text"], widthPx: number): number => {
+    const wrapper = buildProbe(body, widthPx);
     host.appendChild(wrapper);
+    // Reading the height is what forces layout, so this costs one flush.
     const height = wrapper.getBoundingClientRect().height;
     host.removeChild(wrapper);
     return height;
+  };
+
+  /**
+   * One slice of a batch, in one pass.
+   *
+   * The probes are built first, inserted with a single operation, and only then
+   * read: the forced layout is paid once for the slice rather than once per
+   * paragraph, which is where a long document's load time used to go. Heights are
+   * read after the insertion and before any removal, so every wrapper in the slice
+   * is laid out in the same pass and the numbers are the ones a single probe would
+   * have produced.
+   */
+  const probeBatch = (bodies: DocxParagraphBlock["text"][], widthPx: number): number[] => {
+    const heights: number[] = [];
+    for (let start = 0; start < bodies.length; start += MEASURE_PASS_LIMIT) {
+      const slice = bodies.slice(start, start + MEASURE_PASS_LIMIT);
+      const wrappers = slice.map((body) => buildProbe(body, widthPx));
+      const fragment = document.createDocumentFragment();
+      for (const wrapper of wrappers) fragment.appendChild(wrapper);
+      host.appendChild(fragment);
+      for (const wrapper of wrappers) heights.push(wrapper.getBoundingClientRect().height);
+      host.textContent = "";
+    }
+    return heights;
   };
 
   // Calibrate: a stub DOM answers every measurement with the same rectangle, so
@@ -138,8 +176,15 @@ export function createDomMeasurer(): MeasurerHandle | null {
     return null;
   }
 
+  const measure = (block: DocxParagraphBlock, widthPx: number): number => probe(block.text, widthPx);
+  measure.measureMany = (blocks: DocxParagraphBlock[], widthPx: number): number[] =>
+    probeBatch(
+      blocks.map((block) => block.text),
+      widthPx,
+    );
+
   return {
-    measure: (block, widthPx) => probe(block.text, widthPx),
+    measure,
     dispose: () => host.remove(),
     kind: "layout",
   };

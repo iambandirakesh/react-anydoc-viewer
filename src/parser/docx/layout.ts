@@ -52,6 +52,50 @@ function transform(x: number, y: number, cx: number, cy: number) {
   };
 }
 
+/**
+ * Heights for every paragraph block, in order.
+ *
+ * Every paragraph is measured at the same width, so a measurer that can lay a
+ * batch out in one pass is asked to: the whole document is then one forced layout
+ * rather than one per paragraph, which is the difference between a long document
+ * opening quickly and slowly. Measurers without `measureMany` are simply called
+ * per block, with identical results.
+ */
+function measureParagraphs(
+  blocks: DocxBlock[],
+  measure: ParagraphMeasurer,
+  contentWidthPx: number,
+): number[] {
+  const heights = new Array<number>(blocks.length).fill(0);
+  const paragraphs: DocxParagraphBlock[] = [];
+  const positions: number[] = [];
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index] as DocxBlock;
+    if (block.kind === "paragraph") {
+      paragraphs.push(block);
+      positions.push(index);
+    } else {
+      heights[index] = heightOf(block, measure, contentWidthPx);
+    }
+  }
+
+  if (paragraphs.length > 0) {
+    if (measure.measureMany) {
+      const measured = measure.measureMany(paragraphs, contentWidthPx);
+      positions.forEach((index, position) => {
+        heights[index] = Math.max(measured[position] ?? 0, 0);
+      });
+    } else {
+      positions.forEach((index, position) => {
+        heights[index] = Math.max(measure(paragraphs[position] as DocxParagraphBlock, contentWidthPx), 0);
+      });
+    }
+  }
+
+  return heights;
+}
+
 function heightOf(block: DocxBlock, measure: ParagraphMeasurer, contentWidthPx: number): number {
   switch (block.kind) {
     case "paragraph":
@@ -84,7 +128,7 @@ export function layoutDocument(blocks: DocxBlock[], options: LayoutOptions): Lay
     1,
   );
 
-  const heights = blocks.map((block) => heightOf(block, measure, contentWidthPx));
+  const heights = measureParagraphs(blocks, measure, contentWidthPx);
 
   /* ------------------------------------------------------------ pagination */
 
