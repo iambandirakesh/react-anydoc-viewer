@@ -66,8 +66,18 @@ export type DocxBlock = DocxParagraphBlock | DocxTableBlock | DocxImageBlock | D
  * The browser implementation measures real layout; the fallback estimates from
  * the text metrics so a document is still paginated sensibly where no layout
  * engine is available (SSR, unit tests).
+ *
+ * `measureMany` is optional and purely an optimisation: laying out a document
+ * means measuring thousands of paragraphs at one width, and a browser reads a
+ * forced layout per measurement call. A measurer that can lay out a whole batch
+ * and read every height afterwards pays that cost once instead of per paragraph.
+ * Results must be identical to calling the measurer one block at a time, which is
+ * what every caller falls back to when the method is absent.
  */
-export type ParagraphMeasurer = (block: DocxParagraphBlock, widthPx: number) => number;
+export interface ParagraphMeasurer {
+  (block: DocxParagraphBlock, widthPx: number): number;
+  measureMany?(blocks: DocxParagraphBlock[], widthPx: number): number[];
+}
 
 /** Default font size for a paragraph block, used when a run carries none. */
 export const DEFAULT_DOCX_FONT_SIZE = 14.6667; // 11pt, Word's body default

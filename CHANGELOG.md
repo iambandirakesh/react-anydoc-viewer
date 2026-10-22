@@ -63,6 +63,21 @@ will be called out under **Changed**.
   browser test hover the control and measures the contrast of the colour it actually
   renders on.
 
+## [0.1.3] — 2026-10-22
+
+### Performance
+
+- A long `.docx` no longer costs one forced layout per paragraph. Every paragraph
+  in a document is measured at the same width, so the whole document is now laid
+  out in one pass and the heights are read afterwards: a 6,000-paragraph document
+  (360 pages) loads in 624 ms instead of 727 ms on the machine the benchmark runs
+  on, with the same pagination. A measurer that cannot batch is still called per
+  paragraph, with identical results.
+- `npm run bench` (Playwright) measures time-to-first-page for a generated
+  `.pptx`, `.docx` and `.pdf`, scales them with `BENCH_SCALE`, and prints the CPU
+  hotspots with `BENCH_PROFILE=1`, so a slow document can be attributed rather
+  than guessed at.
+
 ## [0.1.0] — unreleased (initial release)
 
 First public release. A free, watermark-free React viewer for `.pptx`, `.docx` and
