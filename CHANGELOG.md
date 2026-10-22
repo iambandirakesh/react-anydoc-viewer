@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 While the major version is `0`, minor versions may contain breaking changes; they
 will be called out under **Changed**.
 
-## [Unreleased]
+## [0.1.2] — 2026-10-22
 
 ### Performance
 
