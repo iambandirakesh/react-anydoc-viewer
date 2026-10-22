@@ -68,7 +68,12 @@ describe("deprecated names", () => {
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rv-root']")?.getAttribute("data-status")).toBe("ready");
     });
-    expect(container.querySelector(".radv-canvas")?.textContent).toContain("Renamed, not replaced");
+    // The slide is only drawn once the container has been measured, which happens
+    // in an effect after the ready state, so wait for the content rather than for
+    // the status alone (this raced the measurement when the suite was busy).
+    await waitFor(() =>
+      expect(container.querySelector(".radv-canvas")?.textContent).toContain("Renamed, not replaced"),
+    );
     expect(ref.current?.getSlideCount()).toBe(1);
     // The ref type and the props type are aliases of the format-neutral ones.
     const handle: DocumentViewerHandle | null = ref.current;
@@ -91,7 +96,9 @@ describe("deprecated names", () => {
 
   it("exposes the format-neutral names on the package entry point", () => {
     expect(typeof api.DocumentViewer).toBe("object");
-    expect(api.SUPPORTED_FORMATS).toEqual(["pptx", "docx", "pdf"]);
+    expect(api.SUPPORTED_FORMATS).toEqual(["pptx", "docx", "pdf", "image", "csv", "text"]);
+    expect(api.SUPPORTED_EXTENSIONS).toContain(".pptx");
+    expect(api.ACCEPT_ATTRIBUTE).toContain("application/pdf");
     expect(typeof api.detectPdfEngine()).toBe("string");
     expect(api.DEFAULT_ARCHIVE_LIMITS.maxEntries).toBeGreaterThan(0);
   });

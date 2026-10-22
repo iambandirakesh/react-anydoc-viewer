@@ -1,12 +1,17 @@
 # react-anydoc-viewer
 
 A free, open-source React component that renders **PowerPoint (`.pptx`)**, **Word
-(`.docx`)** and **PDF** files directly in the browser.
+(`.docx`)**, **PDF**, **images**, **CSV/TSV tables** and **text files** directly in
+the browser.
 
 - **No watermark, no branding, no ads** — ever.
 - **No paid API, no SDK licence, no external service.** Parsing and rendering happen entirely on the client.
-- **Three formats behind one component**: slide navigation, thumbnails, zoom and
-  presentation mode do not care whether the file is a deck, a document or a PDF.
+- **One component for everything**: slide navigation, thumbnails, zoom and
+  presentation mode do not care whether the file is a deck, a document, a PDF, a
+  photograph, a spreadsheet extract or a log file.
+- **No new dependencies for the new formats.** Images, CSV, text and JSON are
+  handled with the ZIP/XML packages the library already had; pdf.js remains the
+  only heavy optional download, and only for PDFs.
 - **Small public API**: one component, one optional handle, a typed error model.
 - **Presentation (slideshow) mode** built in — chrome-free playback with
   click/Space/arrow advance, for both mouse and keyboard audiences.
@@ -66,7 +71,7 @@ import "react-anydoc-viewer/styles.css";
 ### Renamed from `react-pptx-viewer`
 
 The package was called `react-pptx-viewer` while it only opened presentations. The
-name now reflects the three formats it reads. **Existing code keeps working**: the
+name now reflects the formats it reads. **Existing code keeps working**: the
 old exports are aliases, not copies, so they are the same component, class and
 types — but they carry a `@deprecated` tag, and the CSS prefix changed from `rpv-`
 to `radv-`.
@@ -121,13 +126,36 @@ The viewer fills its parent element, so give the container a height:
 | `.pptx` | Parsed here into a shape model, then drawn with SVG + HTML | Slides, themes, images, tables and charts |
 | `.docx` | Parsed here, paginated in the browser, then drawn with the same shape renderer | A page is a slide as far as the viewer is concerned |
 | `.pdf` | Rasterised page by page by [pdf.js](https://mozilla.github.io/pdf.js/) onto a canvas | The engine every browser PDF viewer uses |
+| `.png` `.jpg` `.jpeg` `.gif` `.webp` `.avif` `.bmp` `.svg` | One page, sized from the file's own header | SVG included: an image is always an `<img>`, so it can never script your page |
+| `.csv` `.tsv` | Parsed here, then drawn as a table with a repeated header row | Delimiter detected from the content; a wide table gets a landscape page |
+| `.txt` `.log` `.json` `.html` `.htm` `.md` | Paginated as monospace text on US-Letter pages | JSON is pretty-printed; Markdown is currently shown as source too, and an HTML file is always shown as **source** — never parsed, never framed, never executed |
 
 **The format is decided from the bytes, never from the file name.** `%PDF-`
 identifies a PDF, the ZIP/OPC header identifies a package, and the package's own
 part names (`ppt/presentation.xml`, `word/document.xml`) decide whether it is a
-deck or a document. A `.docx` renamed to `.pptx`, a file with no extension, or an
-`ArrayBuffer` straight from `fetch` all load correctly; a spreadsheet (`.xlsx`)
-or an OLE/CFB file is refused with a specific error instead of a guess.
+deck or a document. Images are identified by their magic bytes. Text files have no
+signature at all, so the bytes decide *whether* a file is text and the content
+decides *how* to read it (JSON, HTML, a consistent-delimiter table, otherwise plain
+text) — pass `contentHint` when your application already knows.
+
+A `.docx` renamed to `.pptx`, a file with no extension, or an `ArrayBuffer`
+straight from `fetch` all load correctly. A spreadsheet (`.xlsx`) is refused with a
+specific error instead of a guess, and a legacy binary `.doc`, `.ppt` or `.xls` is
+named as such rather than being described as encrypted.
+
+### HTML files are shown as source
+
+An uploaded `.html` file is active content, so the viewer reads it and does nothing
+else with it: the file is paginated as monospace text like any other text file, its
+markup is never parsed, and it is never put in a frame — so there is no origin for
+it to run a script from, no host document for it to reach, and no network request
+made on its behalf. There is nothing to opt into: a `.html` file is displayed
+through exactly the same path as a `.txt`, and a diagnostic says so.
+
+If you want an uploaded page actually rendered, that belongs in your own
+application, from a separate cookie-less origin — a stronger boundary than any
+iframe attribute this library could set. [SECURITY.md](SECURITY.md) records exactly
+what this covers and what it does not.
 
 ## Loading documents
 
@@ -153,7 +181,7 @@ A complete file-picker example:
 
 ```tsx
 import { useState } from "react";
-import { DocumentViewer } from "react-anydoc-viewer";
+import { ACCEPT_ATTRIBUTE, DocumentViewer } from "react-anydoc-viewer";
 import "react-anydoc-viewer/styles.css";
 
 export function Uploader() {
@@ -162,7 +190,7 @@ export function Uploader() {
     <>
       <input
         type="file"
-        accept=".pptx,.docx,.pdf"
+        accept={ACCEPT_ATTRIBUTE}
         onChange={(event) => setFile(event.target.files?.[0] ?? null)}
       />
       <div style={{ height: "70vh" }}>
@@ -470,6 +498,7 @@ component.
 | `limits` | `Partial<ArchiveLimits>` | see below | Archive safety limits |
 | `fetchOptions` | `RequestInit` | — | Passed to `fetch` for URL sources |
 | `maxDownloadBytes` | `number` | `134217728` | Maximum accepted download size |
+| `contentHint` | `"text" \| "csv" \| "json" \| "html" \| "markdown"` | — | How to read an ambiguous text file; skips the content guess |
 | `pdfWorkerSrc` | `string` | — | URL of pdf.js's worker module; match it with `detectPdfEngine()` |
 | `onLoad` | `(info: DocumentInfo) => void` | — | Called after a successful parse |
 | `onError` | `(error: DocumentViewerError) => void` | — | Called on any load/parse failure |
@@ -670,6 +699,9 @@ Presentation files are treated as untrusted input:
 - **Scripts** — the viewer never evaluates embedded JavaScript or HTML. Slide text
   is rendered as text. SVG parts are only ever used as an `<img>` source, where
   browsers do not run scripts.
+- **HTML files** — shown as source text, paginated like any other text file, and
+  never put in a frame: no origin, no scripts, no network loads. There is no option
+  to render them. See [SECURITY.md](SECURITY.md).
 - **Links** — hyperlinks are validated with the URL parser and restricted to
   `http:`, `https:`, `mailto:` and `tel:`. `javascript:`, `data:`, `vbscript:`,
   `file:` and credential-bearing URLs are dropped (and reported as

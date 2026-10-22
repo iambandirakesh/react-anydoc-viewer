@@ -12,6 +12,7 @@
 
 import { unzipSync, type UnzipFileInfo } from "fflate";
 import { XmlError } from "./xml";
+import { OLE_LABELS, sniffOleKind } from "./ole";
 
 export interface ArchiveLimits {
   /** maximum size of the compressed input bytes */
@@ -37,6 +38,8 @@ export const DEFAULT_ARCHIVE_LIMITS: ArchiveLimits = {
 export type ArchiveErrorCode =
   | "NOT_A_ZIP"
   | "ENCRYPTED"
+  /** a pre-2007 binary Office file, which is identified but not rendered */
+  | "LEGACY_BINARY"
   | "ARCHIVE_LIMIT_EXCEEDED"
   | "CORRUPT_ARCHIVE"
   | "EMPTY_ARCHIVE";
@@ -100,7 +103,6 @@ function looksLikeOleContainer(bytes: Uint8Array): boolean {
     bytes[7] === 0xe1
   );
 }
-
 function looksLikeZip(bytes: Uint8Array): boolean {
   if (bytes.length < 4) return false;
   return (
@@ -179,6 +181,22 @@ export function readArchive(bytes: Uint8Array, overrides: Partial<ArchiveLimits>
     throw new ArchiveError("EMPTY_ARCHIVE", "The file is empty.");
   }
   if (looksLikeOleContainer(bytes)) {
+    // A legacy `.doc`/`.ppt`/`.xls` and an encrypted OOXML package share this
+    // container, and they are different problems for the user, so the stream
+    // names decide which one is reported.
+    const kind = sniffOleKind(bytes);
+    if (kind === "excel" || kind === "word" || kind === "powerpoint") {
+      throw new ArchiveError(
+        "LEGACY_BINARY",
+        `This file is ${OLE_LABELS[kind]}, which is written in the pre-2007 binary format the viewer cannot display. Open an exported .xlsx, .docx or .pptx instead.`,
+      );
+    }
+    if (kind === "encrypted") {
+      throw new ArchiveError(
+        "ENCRYPTED",
+        "This document is encrypted or password-protected, so its contents cannot be read.",
+      );
+    }
     throw new ArchiveError(
       "ENCRYPTED",
       "This looks like an encrypted or legacy binary (.doc, .ppt, .xls) Office file. Encrypted documents and the pre-2007 binary formats are not supported.",
@@ -349,9 +367,28 @@ export function contentTypeFor(types: ContentTypes, partName: string): string | 
 
 /* ----------------------------------------------------------- image sniffing */
 
-export type ImageKind = "png" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "tiff" | "emf" | "wmf" | "unknown";
+export type ImageKind =
+  | "png"
+  | "jpeg"
+  | "gif"
+  | "bmp"
+  | "webp"
+  | "avif"
+  | "svg"
+  | "tiff"
+  | "emf"
+  | "wmf"
+  | "unknown";
 
-const BROWSER_RENDERABLE: ReadonlySet<ImageKind> = new Set<ImageKind>(["png", "jpeg", "gif", "bmp", "webp", "svg"]);
+const BROWSER_RENDERABLE: ReadonlySet<ImageKind> = new Set<ImageKind>([
+  "png",
+  "jpeg",
+  "gif",
+  "bmp",
+  "webp",
+  "avif",
+  "svg",
+]);
 
 export function isBrowserRenderable(kind: ImageKind): boolean {
   return BROWSER_RENDERABLE.has(kind);
@@ -363,6 +400,7 @@ const MIME_BY_KIND: Record<ImageKind, string> = {
   gif: "image/gif",
   bmp: "image/bmp",
   webp: "image/webp",
+  avif: "image/avif",
   svg: "image/svg+xml",
   tiff: "image/tiff",
   emf: "image/emf",
@@ -397,6 +435,15 @@ export function sniffImageKind(bytes: Uint8Array): ImageKind {
   if (hasAsciiAt(bytes, 0, "GIF8")) return "gif";
   if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return "bmp";
   if (hasAsciiAt(bytes, 0, "RIFF") && hasAsciiAt(bytes, 8, "WEBP")) return "webp";
+  // AVIF/AVIF-sequence: an ISO-BMFF file whose major or compatible brand is
+  // `avif`/`avis`. The compatible brands follow the first one, so both positions
+  // are checked.
+  if (
+    hasAsciiAt(bytes, 4, "ftyp") &&
+    (hasAsciiAt(bytes, 8, "avif") || hasAsciiAt(bytes, 8, "avis") || hasAsciiAt(bytes, 16, "avif"))
+  ) {
+    return "avif";
+  }
   if (
     bytes.length >= 4 &&
     ((bytes[0] === 0x49 && bytes[1] === 0x49 && bytes[2] === 0x2a && bytes[3] === 0x00) ||

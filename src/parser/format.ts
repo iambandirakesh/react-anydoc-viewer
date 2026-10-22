@@ -1,18 +1,23 @@
 /**
  * Document format detection.
  *
- * The viewer opens three formats, and the bytes are the only reliable signal:
- * a `File` may carry a wrong name, a wrong MIME type, or no name at all (an
- * `ArrayBuffer` from `fetch`). Detection therefore works the way a file tool
- * does — magic bytes first, then the package's own part names:
+ * A `File` may carry a wrong name, a wrong MIME type, or no name at all (an
+ * `ArrayBuffer` from `fetch`), so the bytes are the only reliable signal.
+ * Detection therefore works the way a file tool does — magic bytes first, then
+ * the package's own part names:
  *
  *   1. `%PDF-` anywhere in the leading kilobyte  -> PDF
  *   2. the OLE/CFB signature                     -> legacy or encrypted Office
  *   3. the ZIP signature                         -> an OPC package, whose kind
  *      (presentation, document, spreadsheet) is decided by its part names.
+ *
+ * Image magic bytes and text classification are handled with this module's
+ * output in `document.ts`, because they are not containers: an image is
+ * recognised by its header, and a text file by the fact that it decodes as text.
  */
 
 import type { DocumentFormat } from "../errors";
+import { supportedExtensionsSentence } from "../formats";
 
 export type ContainerKind =
   /** `%PDF-` header */
@@ -98,7 +103,12 @@ export function probePackage(names: readonly string[]): PackageProbe {
   return { format: null, label: "an unfamiliar Office package", mainPart: null };
 }
 
-/** The message used when a recognised container is not something we can render. */
+/**
+ * The message used when a recognised container is not something we can render.
+ *
+ * The list of formats is generated from the format table (`src/formats.ts`),
+ * because a hand-written list is one that eventually disagrees with the code.
+ */
 export function unsupportedFormatMessage(label: string): string {
-  return `This file is ${label}, which the viewer cannot display. Supported formats are .pptx, .docx and .pdf.`;
+  return `This file is ${label}, which the viewer cannot display. Supported formats are ${supportedExtensionsSentence()}.`;
 }

@@ -157,6 +157,16 @@ export interface DocumentViewerProps {
   /** maximum bytes accepted from a URL response */
   maxDownloadBytes?: number;
   /**
+   * How to read a text file whose content is ambiguous.
+   *
+   * A `.txt`, `.csv`, `.md` and `.json` file are all "bytes that decode as text",
+   * so the viewer decides from the content. Pass `"csv"`, `"markdown"`,
+   * `"json"`, `"html"` or `"text"` when the host already knows — for example
+   * from the upload's declared type — and the guess is not made. The bytes still
+   * decide whether the file can be read at all.
+   */
+  contentHint?: "text" | "csv" | "json" | "html" | "markdown";
+  /**
    * URL of pdf.js's worker module (`pdf.worker.min.mjs`).
    *
    * Without it pdf.js parses PDFs on the main thread, which needs no bundler

@@ -94,7 +94,8 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
         │
         ▼
   React components   DocumentViewer → SlideCanvas → SlideView → RenderShape/RenderText/…
-                     … or the format's own page renderer (PdfPage)
+                     … or the format's own page renderer
+                        (PdfPage, ImagePage, TextPage, GridPage)
 ```
 
 The boundary that matters is the `PresentationModel`: the parsers produce plain
@@ -105,14 +106,26 @@ made the second and third formats cheap: a page of a Word document is a slide wh
 shapes are paragraphs, tables and pictures, so navigation, zoom, thumbnails,
 presentation mode and the error boundary came for free.
 
-Two seams keep the exotic format out of the rest of the code:
+Two seams keep the exotic formats out of the rest of the code:
 
 - **`probePackage(names)`** decides *which* parser runs, from part names only — no
   extension, MIME type or file name is consulted anywhere in the pipeline.
 - **`PageRenderer`** (see `src/renderer/pageRenderer.ts`) lets a format draw a page
   itself instead of supplying shapes. `SlideCanvas` and `ThumbnailSidebar` call it
   when it is present, so exactly one component knows that a PDF page is a canvas,
-  and the zoom scale is fed into the rasterisation so pages stay sharp.
+  that an image is an `<img>`, that a text file is monospace lines and that a table
+  is a grid, and the zoom scale is fed into the rasterisation so pages stay sharp.
+  The context also carries the viewer's labels, so a renderer that wanted an
+  accessible name of its own would not hard-code English.
+
+Formats that are not OPC packages enter through the same entry point: an image is
+identified by its magic bytes, a text file by the fact that it decodes as text
+(with the *reading* — JSON, HTML, Markdown, delimited table, plain text — decided
+from the content, because text has no signature). Both are dispatched before the
+ZIP path. An HTML file is the same bytes as any other text file and takes the same
+path: it is paginated as source, with a diagnostic naming what it is. No renderer
+in the library ever executes file content, so there is no HTML frame to reason
+about.
 
 ### Parser (`src/parser`)
 
@@ -129,7 +142,11 @@ Two seams keep the exotic format out of the rest of the code:
 | `text.ts` | Body properties (anchor, insets, autofit, wrap), paragraph properties, level styles, runs, bullets and numbering. |
 | `shapes.ts` | The shape-tree walker: `p:sp`, `p:pic`, `p:graphicFrame`, `p:grpSp`, `p:cxnSp`, `mc:AlternateContent`, with group coordinate-space mapping and placeholder inheritance. |
 | `table.ts`, `chart.ts` | Table grids (merges, per-edge borders) and chart families read from cached plot data. |
-| `media.ts` | Lazy object URLs (`data:` URLs where object URLs are unavailable), one per media part, revoked on dispose. |
+| `media.ts` | Lazy object URLs (`data:` URLs where object URLs are unavailable), one per media part, revoked on dispose. Shared byte-to-URL helper used by the image adapter. |
+| `ole.ts` | Identifies a compound file from its stream names (`Workbook`, `WordDocument`, `PowerPoint Document`, `EncryptedPackage`), so legacy binary files are reported by name instead of as "encrypted". |
+| `image.ts` | Header-only geometry for PNG/JPEG/GIF/BMP/WebP/SVG, and the one-page model for a standalone image. |
+| `plaintext/` | The text front-end: `decode.ts` (BOM, UTF-8, UTF-16, Windows-1252 fallback), `classify.ts` (content-based classification and delimiter sniffing), `csv.ts` (quote-aware state machine), `paginate.ts` (wrapping and pagination) and `metrics.ts` (the page geometry and text metrics the page renderers import as well). |
+| `../formats.ts` | The format table: labels, extensions and MIME types, from which `SUPPORTED_EXTENSIONS`, `ACCEPT_ATTRIBUTE` and every "supported formats are …" message are generated. |
 | `presentation.ts` | Assembles everything: slide order from `sldIdLst`, layout/master resolution, inherited shape layers, background resolution, diagnostics. |
 | `docx/` | The whole Word front-end: `styles.ts` (style chain, doc defaults, numbering), `text.ts` (paragraphs → run/picture/page-break blocks), `table.ts`, `drawing.ts` (inline and anchored pictures), `layout.ts` (pagination) and `index.ts` (orchestration). |
 | `pdf.ts` | The pdf.js adapter: loads the engine lazily, reads page count, first-page geometry and metadata into a model, and returns a page renderer. Normalises pdf.js's own errors into the public error model. |
@@ -178,7 +195,9 @@ files:
 4. **Images**: SVG parts are served through `<img>`/blob URLs, where scripts do not
    run. Media never becomes part of the host document.
 5. **No HTML/JS execution from the file**: nothing in the pipeline evaluates
-   document content. Text is rendered as text nodes.
+   document content. Text is rendered as text nodes, and an HTML file is read as
+   text like any other: no iframe, no `srcdoc`, no `innerHTML`, so it has no origin
+   to script from and no request is made on its behalf.
 6. **Resource discipline**: object URLs are revoked on unmount and when the source
    changes; in-flight loads are aborted, and stale results are ignored.
 7. **Third-party engine**: pdf.js runs with `isEvalSupported: false`, so a PDF

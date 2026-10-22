@@ -2,10 +2,12 @@
  * react-anydoc-viewer
  *
  * A free, MIT-licensed React component that renders PowerPoint (.pptx), Word
- * (.docx) and PDF files in the browser. Parsing and rendering happen entirely
+ * (.docx), PDF, images, delimited text tables (.csv/.tsv) and text files
+ * (.txt/.log/.json/.html) in the browser. Parsing and rendering happen entirely
  * client-side; there are no paid APIs, external services, watermarks or branding
- * overlays. The format is detected from the bytes, so one component serves all
- * three.
+ * overlays. The format is detected from the bytes, so one component serves them
+ * all. Markup in a file is never evaluated: an HTML file is shown as its source
+ * text, like any other text file.
  *
  * ```tsx
  * import { DocumentViewer } from "react-anydoc-viewer";
@@ -39,6 +41,15 @@ export {
   isPPTViewerError,
 } from "./errors";
 export { DEFAULT_LABELS } from "./components/labels";
+export {
+  ACCEPT_ATTRIBUTE,
+  FORMAT_DESCRIPTORS,
+  /** Every extension the viewer opens, for a file picker or a server allow-list. */
+  SUPPORTED_EXTENSIONS,
+  /** Consistency check: formats advertised without a descriptor in the format table. */
+  missingDescriptors,
+} from "./formats";
+export type { FormatDescriptor } from "./formats";
 export { DEFAULT_ARCHIVE_LIMITS } from "./parser/archive";
 export { supportedPresetNames } from "./parser/geometry";
 /** Which pdf.js build this environment needs; pick `pdfWorkerSrc` to match it. */

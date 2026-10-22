@@ -3,6 +3,7 @@ import type { PresentationModel } from "../model/types";
 import type { MediaStore } from "../parser/media";
 import { SlideView } from "../renderer/SlideView";
 import type { PageRenderer } from "../renderer/pageRenderer";
+import type { ViewerLabels } from "../types/public";
 
 export interface ThumbnailSidebarProps {
   model: PresentationModel;
@@ -11,7 +12,7 @@ export interface ThumbnailSidebarProps {
   slideHeight: number;
   currentIndex: number;
   width?: number;
-  labels: { thumbnails: string };
+  labels: ViewerLabels;
   onSelect: (index: number) => void;
   /** draws a page whose content is not a shape list (PDF) */
   renderPage?: PageRenderer | null;
@@ -128,8 +129,11 @@ export function ThumbnailSidebar({
                       width: slideWidth,
                       height: slideHeight,
                       scale,
+                      // No pointer interaction in a thumbnail: a click belongs to the
+                      // thumbnail, not to the page inside it.
                       interactive: false,
                       media,
+                      labels,
                       warn: () => undefined,
                     })
                   ) : (

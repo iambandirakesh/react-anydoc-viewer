@@ -7,6 +7,62 @@ All notable changes to this project are documented here. The format follows
 While the major version is `0`, minor versions may contain breaking changes; they
 will be called out under **Changed**.
 
+## [Unreleased]
+
+### Added
+
+- **Images**: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp` and `.svg`
+  open as a one-page document. The page box is the image's own pixel size, read
+  from the file header rather than guessed, and the bytes are always handed to the
+  browser as an `<img>` (SVG included), so an untrusted image can never reach the
+  host page.
+- **Delimited text tables** (`.csv`, `.tsv`): parsed with a quote-aware state
+  machine, with the delimiter detected from the content (comma, semicolon, tab or
+  pipe), one page per chunk of rows, the header row repeated on every page, and a
+  landscape page when the table is wider than a portrait one. Values stay text.
+- **Text files** (`.txt`, `.log`, `.json`, `.html`, `.htm`): paginated as monospace
+  text on US-Letter pages. JSON is pretty-printed; HTML is shown as *source* and
+  never executed; the encoding (UTF-8, UTF-16 with or without a mark, otherwise
+  Windows-1252) is detected, reported, and never silently guessed.
+- Detection of images and of text-based files from their bytes. Text has no
+  signature, so the reading is chosen by content: JSON, HTML, Markdown, a
+  consistent delimiter table, otherwise plain text.
+- `SUPPORTED_EXTENSIONS` and `ACCEPT_ATTRIBUTE` exports, so a host's file picker
+  and server allow-list can be generated from the same table the viewer uses.
+- `missingDescriptors()`, used by the package gate to assert that every advertised
+  format has an entry in the format table.
+- `contentHint` prop: when a host already knows how to read an ambiguous text file,
+  it can say so and the content guess is not made. The bytes still decide whether
+  the file can be read at all.
+- On-demand identification of OLE/CFB compound files from their stream names, so a
+  legacy `.xls`/`.doc`/`.ppt` and an encrypted OOXML package are no longer reported
+  as the same thing.
+
+### Changed
+
+- **`DocumentFormat` gained `"image"`, `"csv"` and `"text"`**, and
+  `SUPPORTED_FORMATS` lists them. Code that switches exhaustively over the format
+  needs new branches.
+- A legacy binary `.doc`, `.ppt` or `.xls` is now reported as `UNSUPPORTED_FORMAT`,
+  naming the format and suggesting an export, instead of `ENCRYPTED`. An encrypted
+  package is still `ENCRYPTED`. Code branching on the error code is affected.
+- Bytes that are neither a container nor binary are now detected as a text document
+  instead of failing with `NOT_A_PRESENTATION`; binary bytes and whitespace-only
+  files are still refused.
+- Format lists in error messages and documentation are generated from one table
+  (`src/formats.ts`) rather than written out per call site.
+
+### Fixed
+
+- `readArchive` no longer describes every compound file as encrypted.
+- The presentation pill's **Exit presentation** control disappeared under the
+  pointer in the light theme: hovering replaced its translucent background with the
+  theme's light `--radv-btn-hover` while the label stayed near-white, so the control
+  was white on white exactly when it was about to be clicked (in the dark theme it
+  happened to look fine). Its rules now outrank the generic button hover rule, and a
+  browser test hover the control and measures the contrast of the colour it actually
+  renders on.
+
 ## [0.1.3] — 2026-10-22
 
 ### Performance

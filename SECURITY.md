@@ -1,8 +1,8 @@
 # Security
 
 `react-anydoc-viewer` renders files it did not create, usually uploaded by end
-users. It treats every document it opens — `.pptx`, `.docx` or `.pdf` — as hostile
-input, and the same limits apply to all three.
+users. It treats every document it opens — `.pptx`, `.docx`, `.pdf`, images, tables
+and text files — as hostile input, and the same limit checks apply to all of them.
 
 ## Reporting a vulnerability
 
@@ -28,6 +28,11 @@ patch or minor releases rather than backports.
 | **Malicious hyperlinks** | Only `http`, `https`, `mailto` and `tel` become `href`s, and only when rendering interactively. `javascript:`, `data:`, `vbscript:`, `file:` and anything unknown are stripped and reported as `hyperlink.blocked`; the text remains visible but is not a link. |
 | **SVG with embedded scripts** | SVG media is always served through a blob/`data:` URL in an `<img>` element, where scripts do not execute and the SVG cannot reach the host document. |
 | **Cross-site data leakage** | The library makes no network requests of its own. Fetching happens only for a `source` you pass (with your `fetchOptions`, so you control credentials and CORS), and downloads are capped by `maxDownloadBytes`. |
+| **HTML files** | Shown as source text, paginated like any other text file: never parsed, never framed, never given an origin, so nothing in it can run or load. There is no rendering option to misuse — no iframe, no `srcdoc`, no `innerHTML` — and the file's own content is displayed as characters like any other text. An HTML file is the one format with no safe way to be *executed* here, so it is not executed at all. |
+| **Script from an uploaded image** | Every image, SVG included, is delivered as a blob/`data:` URL in an `<img>` element: scripts do not run there and the file cannot reach the host document. Vector metafiles a browser cannot decode (TIFF, EMF, WMF) are refused with a named error rather than handed to a decoder. |
+| **Runaway work from a plain text or table file** | Text pages are capped at 1000 pages; a table keeps at most 20 000 rows and parses at most 8 MiB of characters. Both truncations are reported as diagnostics, so a host can refuse the file instead of accepting a partial view. Decoding is bounded by the archive limits and `maxDownloadBytes` for downloads. |
+| **Misleading decoding of text** | A file that is not valid UTF-8 is decoded as Windows-1252 and reported: the viewer never silently substitutes characters, because a document that displays the wrong text without saying so is a security problem as well as a bug. |
+| **Table content executed as a formula** | Cell values are rendered as text, never interpreted. Values that begin with `=`, `+`, `-` or `@` are displayed literally; a host that exports them back to a spreadsheet must neutralise them itself (formula injection is an export concern). |
 | **Resource leaks / memory growth** | Object URLs are tracked and revoked on unmount and on source change; in-flight loads are aborted (superseded loads never render); a destroyed PDF document proxy is released with the load; media is inflated on demand. |
 | **Denial of service through pathological files** | Deeply nested groups, thousands of shapes, huge tables, tens of thousands of paragraphs and pages that are never visited are bounded by the archive limits and by lazy rendering; unbounded recursion is not used when walking shape trees, and a page that throws is contained by an error boundary so one bad page cannot break the viewer. |
 | **Supply chain** | Runtime dependencies are `fflate` (MIT), `fast-xml-parser` (MIT) and `pdfjs-dist` (Apache-2.0, Mozilla — the engine behind Firefox's PDF viewer). Nothing is fetched from a CDN at runtime, the package ships no post-install scripts, and `pdfjs-dist` is imported lazily, so it is only ever evaluated when a PDF is opened. |
@@ -37,6 +42,11 @@ patch or minor releases rather than backports.
 - **Host application mistakes.** Sanitising the surrounding page, CSP, and the
   decision to render arbitrary user uploads at all remain the application's
   responsibility.
+- **A page you decide to render yourself.** This library will not execute an
+  uploaded HTML file, but if your application does — in an iframe, a preview pane
+  or an editor — that decision and its isolation are yours. Serve untrusted uploads
+  from a separate cookie-less origin: it is a stronger boundary than any iframe
+  attribute, and sandboxing does not stop the framed document's own network loads.
 - **Content-level deception.** A presentation can contain misleading text, images
   or hyperlinks. The viewer renders what the file says.
 - **Rendering engines.** Fonts, images and text layout are the browser's job, and
