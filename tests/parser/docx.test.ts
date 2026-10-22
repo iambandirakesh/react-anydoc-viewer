@@ -20,6 +20,7 @@ import {
 } from "../fixtures/docx";
 import { TINY_PNG } from "../fixtures/pptx";
 import { buildPdf } from "../fixtures/pdf";
+import type { DocxParagraphBlock, ParagraphMeasurer } from "../../src/parser/docx/model";
 
 /** Letter, 1 inch margins. */
 const PAGE_WIDTH_EMU = twipsToEmu(12240);
@@ -210,6 +211,59 @@ describe("DOCX documents", () => {
     );
     expect(before.model.slides).toHaveLength(2);
     before.dispose();
+  });
+
+  it("measures paragraphs in one batch without changing the pagination", () => {
+    // A measurer that can lay out a whole batch is asked to, once, and the pages
+    // it produces are the ones the per-paragraph path would have produced.
+    const many = Array.from({ length: 9 }, (_, index) => paragraph(`Paragraph ${index + 1}`)).join("");
+    const bytes = buildDocx({
+      body: `${many}${wTable({ columns: [6000], rows: [{ cells: [{ xml: paragraph("cell") }] }] })}`,
+    });
+
+    let perBlockCalls = 0;
+    const perBlock: ParagraphMeasurer = () => {
+      perBlockCalls += 1;
+      return 100;
+    };
+
+    let batchCalls = 0;
+    let batchedBlocks: DocxParagraphBlock[] = [];
+    let batchedPerBlockCalls = 0;
+    const batched = (() => {
+      batchedPerBlockCalls += 1;
+      return 100;
+    }) as ParagraphMeasurer;
+    batched.measureMany = (blocks: DocxParagraphBlock[]) => {
+      batchCalls += 1;
+      batchedBlocks = blocks;
+      return blocks.map(() => 100);
+    };
+
+    const one = parse(bytes, { measureParagraph: perBlock });
+    const inOnePass = parse(bytes, { measureParagraph: batched });
+
+    // The batch carries every paragraph, in document order, and no other kind of
+    // block, and the per-block entry point was never used for them.
+    expect(batchCalls).toBe(1);
+    expect(batchedBlocks).toHaveLength(9);
+    expect(batchedBlocks.map((block) => textBodyPlainText(block.text))).toEqual(
+      Array.from({ length: 9 }, (_, index) => `Paragraph ${index + 1}`),
+    );
+    // Nine paragraphs and one table cell (cells are measured one at a time).
+    expect(perBlockCalls).toBe(10);
+    // With a batch measurer, only the cell went through the per-block path.
+    expect(batchedPerBlockCalls).toBe(1);
+
+    // Same pages, same offsets, same text.
+    expect(inOnePass.model.slides).toHaveLength(one.model.slides.length);
+    const offsets = (parsed: ParsedDocument) =>
+      parsed.model.slides.map((slide) => slide.shapes.map((shape) => shape.xfrm.y));
+    expect(offsets(inOnePass)).toEqual(offsets(one));
+    expect(inOnePass.model.slides.map(pageText)).toEqual(one.model.slides.map(pageText));
+
+    one.dispose();
+    inOnePass.dispose();
   });
 
   it("keeps a w:keepNext paragraph with the following one", () => {

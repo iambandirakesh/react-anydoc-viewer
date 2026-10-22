@@ -622,13 +622,33 @@ only when it becomes visible, so a 500-page PDF does not parse 500 pages up fron
 - Thumbnails are mounted only when they scroll near the viewport, so a 200-slide
   deck does not render 200 slides up front.
 - Rendering is memoised per page, so changing pages does not re-render the rest.
+- A `.docx` is **measured in one layout pass**, not one forced layout per
+  paragraph: every paragraph is laid out at the same content width, so the whole
+  document is measured at once and pagination reads the heights afterwards. This
+  was the largest cost in opening a long Word document.
 
 The `.pptx` and `.docx` parsers run synchronously on the main thread after the
 download (the load is `await`, so React paints the loading state first). Most decks
 parse in a few milliseconds; a very large deck (hundreds of slides with large
-embedded media) will block briefly during that step. A `.docx` additionally measures
-each paragraph, which costs a layout pass per page — still milliseconds for ordinary
-documents. PDFs are parsed by pdf.js, in a worker when `pdfWorkerSrc` is set.
+embedded media) will block briefly during that step. PDFs are parsed by pdf.js, in a
+worker when `pdfWorkerSrc` is set; rasterising a page whose content is a lot of
+vector art and fonts is pdf.js's cost rather than this library's.
+
+Measured with `npm run bench` in Chrome against the demo, from the bytes reaching
+the viewer to the first page being in the DOM (see the table below):
+
+| File | Content | Load |
+| --- | --- | --- |
+| `.pptx` | 120 slides, 3 pictures, 3.2 MB | **0.13 s** |
+| `.docx` | 6,000 paragraphs and tables, 360 pages | **0.62 s** |
+| `.pdf` | 600 pages, 1.4 MB | **0.42 s** |
+
+Load time is linear in the amount of content — 360 slides take three times as long
+as 120, not ten — so the number for your own file follows from its size. If a file is
+slower than this suggests it should be, measure it instead of guessing:
+`npm run bench` generates large fixtures of each format, `BENCH_SCALE=3` triples
+them, `BENCH_PROFILE=1` prints where the main thread actually spent its time, and
+`BENCH_MEDIA=heavy` puts two pictures on every slide to check the media path.
 
 Bundle size (measured on the built artefacts): **86.3 kB gzipped** for the minified
 ESM bundle — the ZIP/XML dependencies, all three format front-ends and the viewer —
@@ -732,7 +752,18 @@ npm run typecheck    # TypeScript, no emit
 npm run build        # ESM + CJS + UMD bundles, styles.css, .d.ts
 npm run test:package # build, npm pack, then verify from separate React 19 and 17 apps
 npm run test:browser # Playwright integration tests in real Chrome (starts the demo)
+npm run bench        # load-time benchmark for each format (starts the demo)
 ```
+
+The benchmark ([bench/load.spec.ts](bench/load.spec.ts)) is deliberately not part of
+`test:browser`: it reports numbers rather than pass/fail, so a loaded machine must
+not be able to fail it. It builds its own large fixtures (`bench/fixtures.ts`), and
+times the load *inside the page* — a `change` listener on the file input and the
+viewer's `data-status` — so no part of the harness's own latency is measured.
+`BENCH_RUNS` sets the repetitions (median reported), `BENCH_ONLY=docx` narrows the
+formats, `BENCH_SCALE` scales the fixtures, `BENCH_MEDIA=heavy` loads the deck down
+with pictures, `BENCH_PROFILE=1` prints a CDP CPU profile by self time, and
+`BENCH_PORT` points it at a dev server of its own.
 
 The browser suite drives the demo application end to end: navigation, zoom and fit
 modes, thumbnails, keyboard shortcuts, fullscreen (native or overlay), diagnostics,

@@ -69,6 +69,7 @@
     "test:watch": "vitest",
     "test:package": "npm run build && node scripts/verify-package.mjs",
     "test:browser": "playwright test",
+    "bench": "playwright test -c bench",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build && node scripts/prepublish-guard.mjs",
     "build:demo": "vite build --config examples/demo/vite.config.ts",
     "pack:dry": "npm pack --dry-run"
