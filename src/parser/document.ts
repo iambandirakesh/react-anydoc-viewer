@@ -16,11 +16,15 @@
 
 import type { PresentationModel } from "../model/types";
 import { DocumentViewerError, type DocumentFormat } from "../errors";
-import { readArchive, type ArchiveLimits } from "./archive";
+import { isViewerRenderable, readArchive, sniffImageKind, type ArchiveLimits } from "./archive";
 import { probePackage, sniffContainer, unsupportedFormatMessage } from "./format";
+import { parseImageDocument, unsupportedImageMessage } from "./image";
+import { detectPlainTextKind, parsePlainTextDocument } from "./plaintext";
+import type { PlainTextKind } from "./plaintext/classify";
 import { loadPresentationBytes, normalizeError, type LoadOptions, type ViewerSource } from "./loadPresentation";
 import { parsePresentationArchive } from "./presentation";
 import { parseDocxArchive, type ParsedDocx } from "./docx";
+import { parseXlsxArchive } from "./xlsx";
 import { parsePdfDocument, type PdfEngine, type PdfJsLoader } from "./pdf";
 import type { MediaStore } from "./media";
 import type { PageRenderer } from "../renderer/pageRenderer";
@@ -34,6 +38,12 @@ export interface DocumentParseOptions {
   pdfWorkerSrc?: string;
   /** forces a pdf.js build instead of feature-detecting one (tests) */
   pdfEngine?: PdfEngine;
+  /**
+   * How an already-recognised text file should be presented when its content is
+   * ambiguous (`.txt` vs `.csv` vs Markdown). The bytes still decide *whether*
+   * the file is text; this only chooses the reading.
+   */
+  contentHint?: PlainTextKind;
   /** overrides the pdf.js import (tests) */
   loadPdfJs?: PdfJsLoader;
   /** overrides DOCX text measurement (tests) */
@@ -54,7 +64,14 @@ export function detectFormat(bytes: Uint8Array): DocumentFormat | "legacy" | "un
   const container = sniffContainer(bytes);
   if (container === "pdf") return "pdf";
   if (container === "ole") return "legacy";
-  if (container !== "zip") return "unknown";
+  if (container !== "zip") {
+    // A container signature wins over the image magic bytes, so a ZIP whose
+    // first entry happens to start with an image header is still a package.
+    if (isViewerRenderable(sniffImageKind(bytes))) return "image";
+    // Text has no signature, so decoding is the detection: anything that
+    // decodes as text is a text document, classified by its content.
+    return detectPlainTextKind(bytes) ?? "unknown";
+  }
   try {
     const archive = readArchive(bytes);
     return probePackage(archive.names).format ?? "unknown";
@@ -64,7 +81,7 @@ export function detectFormat(bytes: Uint8Array): DocumentFormat | "legacy" | "un
 }
 
 /**
- * Parse a ZIP/OPC package (`.pptx` or `.docx`) synchronously.
+ * Parse a ZIP/OPC package (`.pptx`, `.docx` or `.xlsx`) synchronously.
  *
  * PDFs need an async engine, so they are rejected here with a message pointing at
  * {@link parseDocumentBytes}; everything else keeps the synchronous fast path the
@@ -93,6 +110,19 @@ export function parsePackageBytes(bytes: Uint8Array, options: DocumentParseOptio
     });
     return { format: "docx", model: parsed.model, media: parsed.media, dispose: parsed.dispose };
   }
+  if (probe.format === "xlsx") {
+    const parsed = parseXlsxArchive(archive, {
+      limits: options.limits,
+      maxDiagnostics: options.maxDiagnostics,
+    });
+    return {
+      format: "xlsx",
+      model: parsed.model,
+      media: parsed.media,
+      renderPage: parsed.renderPage,
+      dispose: parsed.dispose,
+    };
+  }
   throw new DocumentViewerError("UNSUPPORTED_FORMAT", unsupportedFormatMessage(probe.label), {
     detail: probe.mainPart ?? undefined,
   });
@@ -115,7 +145,43 @@ export async function parseDocumentBytes(
   bytes: Uint8Array,
   options: DocumentParseOptions = {},
 ): Promise<ParsedDocument> {
-  if (sniffContainer(bytes) === "pdf") {
+  const container = sniffContainer(bytes);
+  if (container !== "pdf" && container !== "zip" && container !== "ole") {
+    // Not a container at all: the only files that get this far are images, and
+    // everything else is refused with the same wording as an unknown package.
+    const kind = sniffImageKind(bytes);
+    if (isViewerRenderable(kind)) {
+      const parsed = parseImageDocument(bytes, { maxDiagnostics: options.maxDiagnostics });
+      return {
+        format: "image",
+        model: parsed.model,
+        media: parsed.media,
+        renderPage: parsed.renderPage,
+        dispose: parsed.dispose,
+      };
+    }
+    if (kind !== "unknown") {
+      // EMF/WMF: a real image, but not one this browser can draw. TIFF is
+      // handled above through its own decoder.
+      throw new DocumentViewerError("UNSUPPORTED_FORMAT", unsupportedImageMessage(kind), {
+        detail: `detected image kind: ${kind}`,
+      });
+    }
+    if (detectPlainTextKind(bytes) !== null) {
+      const parsed = parsePlainTextDocument(bytes, {
+        maxDiagnostics: options.maxDiagnostics,
+        ...(options.contentHint ? { contentHint: options.contentHint } : {}),
+      });
+      return {
+        format: parsed.format,
+        model: parsed.model,
+        media: parsed.media,
+        renderPage: parsed.renderPage,
+        dispose: parsed.dispose,
+      };
+    }
+  }
+  if (container === "pdf") {
     // `parsePdfDocument` normalises its own failures already.
     const parsed = await parsePdfDocument(bytes, {
       workerSrc: options.pdfWorkerSrc,

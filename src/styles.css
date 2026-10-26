@@ -132,17 +132,41 @@
   color: rgba(241, 243, 244, 0.72);
 }
 
-.radv-present-hint .radv-btn {
+/*
+ * The exit control inside the presentation pill.
+ *
+ * The extra `.radv-present-exit` class is load-bearing, not decoration.
+ * `.radv-btn:hover:not(:disabled)` (below) scores three class-level selectors,
+ * the same as `.radv-present-hint .radv-btn:hover`, and it is declared later in
+ * this file — so the plain rule lost the cascade and hovering the button replaced
+ * its translucent pill background with the theme's light `--radv-btn-hover`, while
+ * the label stayed near-white. White on near-white: the control disappeared under
+ * the pointer, in the light theme only, which is exactly the sort of difference
+ * between themes that is easy to miss.
+ *
+ * The second class takes these rules above that one regardless of source order,
+ * and the colour is restated on every state so the label can never inherit a
+ * theme colour onto a translucent white pill.
+ */
+.radv-present-hint .radv-btn.radv-present-exit {
   flex: 0 0 auto;
   padding: 4px 9px;
   font-size: 11px;
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.12);
   color: #f1f3f4;
 }
 
-.radv-present-hint .radv-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+.radv-present-hint .radv-btn.radv-present-exit:hover,
+.radv-present-hint .radv-btn.radv-present-exit:focus-visible {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.42);
+  color: #ffffff;
+}
+
+.radv-present-hint .radv-btn.radv-present-exit:active {
+  background: rgba(255, 255, 255, 0.34);
+  color: #ffffff;
 }
 
 @media (max-width: 520px) {
@@ -790,6 +814,65 @@
   }
 }
 
+
+/* ------------------------------------------------- text and grid pages */
+/*
+ * Pages whose content is not a shape list (text, CSV, images, an HTML file's
+ * rendered page) draw themselves. Their geometry is inline, because it comes from
+ * the parser's metrics; only the parts that should follow the host's theme are
+ * styled here.
+ */
+.radv-text-page {
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: pre;
+  background: #ffffff;
+  color: var(--radv-text);
+  user-select: text;
+}
+
+.radv-grid-page {
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #ffffff;
+  color: var(--radv-text);
+  user-select: text;
+}
+
+.radv-tiff-page {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.radv-tiff-page canvas {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.radv-grid {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.radv-grid th,
+.radv-grid td {
+  padding: 0 6px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  border: 1px solid var(--radv-chrome-border);
+}
+
+.radv-grid th.radv-grid-head,
+.radv-grid td.radv-grid-head {
+  background: var(--radv-btn-bg);
+  font-weight: 600;
+}
 
 @media print {
   .radv-toolbar,

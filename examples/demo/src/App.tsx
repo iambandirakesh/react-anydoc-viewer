@@ -8,6 +8,7 @@
 
 import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
+  ACCEPT_ATTRIBUTE,
   DocumentViewer,
   detectPdfEngine,
   type FitMode,
@@ -24,23 +25,24 @@ import {
   buildSampleDocument,
   buildSamplePdf,
 } from "./sampleDocument";
+import { buildXlsx } from "../../../tests/fixtures/xlsx";
+import { buildTiff } from "../../../tests/fixtures/tiff";
 
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const PDF_MIME = "application/pdf";
-/** Everything the viewer opens, for the file picker. */
-const ACCEPT = [
-  ".pptx",
-  ".docx",
-  ".pdf",
-  PPTX_MIME,
-  DOCX_MIME,
-  PDF_MIME,
-].join(",");
+const TIFF_MIME = "image/tiff";
+const SAMPLE_XLSX_FILE_NAME = "sample-workbook.xlsx";
+const SAMPLE_TIFF_FILE_NAME = "sample-scan.tiff";
 
 const FORMAT_LABELS: Record<string, string> = {
   pptx: "PowerPoint presentation",
   docx: "Word document",
+  xlsx: "Excel workbook",
   pdf: "PDF document",
+  image: "image",
+  csv: "delimited text table",
+  text: "text file",
 };
 
 /**
@@ -52,6 +54,51 @@ const PDF_WORKER_SRC =
   detectPdfEngine() === "legacy"
     ? new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).href
     : new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).href;
+
+/** A workbook with the value kinds a reader meets: text, numbers, dates, percentages, formulas and merges. */
+function buildSampleWorkbook(): Uint8Array {
+  return buildXlsx({
+    title: "Quarterly numbers",
+    creator: "react-anydoc-viewer",
+    sheets: [
+      {
+        name: "Summary",
+        cols: [
+          { min: 1, max: 1, width: 22 },
+          { min: 2, max: 4, width: 16 },
+        ],
+        merges: ["A6:D6"],
+        rows: [
+          ["Region", "Revenue", "Growth", "Updated"],
+          ["North", 128400, { type: "percent", value: 0.128 }, { type: "date", serial: 45292 }],
+          ["South", 98120, { type: "percent", value: -0.041 }, { type: "date", serial: 45292 }],
+          ["East", 154900, { type: "percent", value: 0.203 }, { type: "date", serial: 45292 }],
+          ["Total", { type: "formula", formula: "SUM(B2:B4)", value: 381420 }, null, null],
+          ["Formulas show the cached value; they are never recalculated in the browser.", null, null, null],
+        ],
+      },
+      {
+        name: "Notes",
+        rows: [
+          ["Read-only grid"],
+          ["Dates and percentages come from the cell's number format"],
+          ["Merged cells keep their spans"],
+          ["Hidden sheets and charts are reported, not drawn"],
+        ],
+      },
+    ],
+  });
+}
+
+/** A two-page uncompressed RGB TIFF, so the canvas decoder has a real file to draw. */
+function buildSampleTiff(): Uint8Array {
+  return buildTiff({
+    pages: [
+      { width: 480, height: 300, rgb: [214, 69, 65] },
+      { width: 480, height: 300, rgb: [38, 84, 124] },
+    ],
+  });
+}
 
 export function App() {
   const [source, setSource] = useState<File | null>(null);
@@ -97,6 +144,22 @@ export function App() {
   const loadSamplePdf = useCallback(() => {
     try {
       loadBytes(buildSamplePdf(), SAMPLE_PDF_FILE_NAME, PDF_MIME);
+    } catch (cause) {
+      setBuildError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [loadBytes]);
+
+  const loadSampleXlsx = useCallback(() => {
+    try {
+      loadBytes(buildSampleWorkbook(), SAMPLE_XLSX_FILE_NAME, XLSX_MIME);
+    } catch (cause) {
+      setBuildError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [loadBytes]);
+
+  const loadSampleTiff = useCallback(() => {
+    try {
+      loadBytes(buildSampleTiff(), SAMPLE_TIFF_FILE_NAME, TIFF_MIME);
     } catch (cause) {
       setBuildError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -153,8 +216,9 @@ export function App() {
         <div>
           <h1>react-anydoc-viewer</h1>
           <p>
-            A free, watermark-free React viewer for <code>.pptx</code>, <code>.docx</code> and <code>.pdf</code> files.
-            Everything renders from the file in your browser — no server, no API key, no conversion service.
+            A free, watermark-free React viewer for <code>.pptx</code>, <code>.docx</code>, <code>.xlsx</code>,
+            <code>.pdf</code>, images (TIFF included), <code>.csv</code> and text files. Everything renders from
+            the file in your browser — no server, no API key, no conversion service.
           </p>
         </div>
         <div className="demo__header-actions">
@@ -167,9 +231,17 @@ export function App() {
           <button type="button" className="demo__button" onClick={loadSamplePdf}>
             Load sample .pdf
           </button>
+          <button type="button" className="demo__button" onClick={loadSampleXlsx}>
+            Load sample .xlsx
+          </button>
+          <button type="button" className="demo__button" onClick={loadSampleTiff}>
+            Load sample .tiff
+          </button>
           <label className="demo__button">
             Open a file
-            <input type="file" accept={ACCEPT} onChange={onPick} />
+            {/* The picker's filter comes from the library, so it can never disagree
+                with what the viewer actually opens. */}
+            <input type="file" accept={ACCEPT_ATTRIBUTE} onChange={onPick} />
           </label>
         </div>
       </header>
@@ -265,9 +337,13 @@ export function App() {
           <p className="demo__hint">
             Every sample is generated in the browser. The deck includes text, shapes, images, a group, a table,
             charts, an empty slide and deliberately unsupported content; the Word document adds headings, lists, a
-            merged table, a picture and page breaks; the PDF is rasterised page by page with pdf.js. Turn on debug mode
-            to read the diagnostics. Presentation mode hides every control and fills the screen — click or press Space
-            to advance, Esc to come back.
+            merged table, a picture and page breaks; the workbook adds dates, percentages, formulas, merges and a
+            second sheet; the PDF is rasterised page by page with pdf.js and the TIFF is decoded page by page. Images,
+            delimited text and text files open as pages too — drop one in and turn on debug mode to read the diagnostics, which
+            explain how a text file was classified and, for a table, which delimiter was detected. Presentation mode
+            hides every control and fills the screen — click or press Space to advance, Esc to come back. An
+            <code>.html</code> file is shown as its source text, like any other text file: nothing in it is ever
+            executed and it is never put in a frame.
           </p>
         </aside>
 
@@ -299,7 +375,7 @@ export function App() {
             />
           ) : (
             <div className="demo__empty">
-              <p>Drop a .pptx, .docx or .pdf file here, or</p>
+              <p>Drop a .pptx, .docx, .xlsx, .pdf, image, .csv or text file here, or</p>
               <button type="button" className="demo__button demo__button--primary" onClick={loadSample}>
                 load the sample deck
               </button>

@@ -1,18 +1,23 @@
 /**
  * Document format detection.
  *
- * The viewer opens three formats, and the bytes are the only reliable signal:
- * a `File` may carry a wrong name, a wrong MIME type, or no name at all (an
- * `ArrayBuffer` from `fetch`). Detection therefore works the way a file tool
- * does — magic bytes first, then the package's own part names:
+ * A `File` may carry a wrong name, a wrong MIME type, or no name at all (an
+ * `ArrayBuffer` from `fetch`), so the bytes are the only reliable signal.
+ * Detection therefore works the way a file tool does — magic bytes first, then
+ * the package's own part names:
  *
  *   1. `%PDF-` anywhere in the leading kilobyte  -> PDF
  *   2. the OLE/CFB signature                     -> legacy or encrypted Office
  *   3. the ZIP signature                         -> an OPC package, whose kind
  *      (presentation, document, spreadsheet) is decided by its part names.
+ *
+ * Image magic bytes and text classification are handled with this module's
+ * output in `document.ts`, because they are not containers: an image is
+ * recognised by its header, and a text file by the fact that it decodes as text.
  */
 
 import type { DocumentFormat } from "../errors";
+import { supportedExtensionsSentence } from "../formats";
 
 export type ContainerKind =
   /** `%PDF-` header */
@@ -68,7 +73,6 @@ export function sniffContainer(bytes: Uint8Array): ContainerKind {
   return "unknown";
 }
 
-const SPREADSHEET_MARKERS = ["xl/workbook.xml", "xl/workbook.bin"];
 const PRESENTATION_MARKERS = ["ppt/presentation.xml"];
 const DOCUMENT_MARKERS = ["word/document.xml"];
 
@@ -89,8 +93,11 @@ export function probePackage(names: readonly string[]): PackageProbe {
   if (DOCUMENT_MARKERS.some(has)) {
     return { format: "docx", label: "a Word document (.docx)", mainPart: "word/document.xml" };
   }
-  if (SPREADSHEET_MARKERS.some(has)) {
-    return { format: null, label: "an Excel workbook (.xlsx)", mainPart: "xl/workbook.xml" };
+  if (has("xl/workbook.xml")) {
+    return { format: "xlsx", label: "an Excel workbook (.xlsx)", mainPart: "xl/workbook.xml" };
+  }
+  if (has("xl/workbook.bin")) {
+    return { format: null, label: "an Excel binary workbook (.xlsb)", mainPart: "xl/workbook.bin" };
   }
   if (has("mimetype")) {
     return { format: null, label: "an OpenDocument file", mainPart: null };
@@ -98,7 +105,12 @@ export function probePackage(names: readonly string[]): PackageProbe {
   return { format: null, label: "an unfamiliar Office package", mainPart: null };
 }
 
-/** The message used when a recognised container is not something we can render. */
+/**
+ * The message used when a recognised container is not something we can render.
+ *
+ * The list of formats is generated from the format table (`src/formats.ts`),
+ * because a hand-written list is one that eventually disagrees with the code.
+ */
 export function unsupportedFormatMessage(label: string): string {
-  return `This file is ${label}, which the viewer cannot display. Supported formats are .pptx, .docx and .pdf.`;
+  return `This file is ${label}, which the viewer cannot display. Supported formats are ${supportedExtensionsSentence()}.`;
 }

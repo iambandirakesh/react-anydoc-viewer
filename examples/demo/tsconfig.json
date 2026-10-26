@@ -8,5 +8,5 @@
       "react-anydoc-viewer/styles.css": ["../../src/styles.css"]
     }
   },
-  "include": ["src", "vite.config.ts", "../../src/pdfjs-worker.d.ts"]
+  "include": ["src", "vite.config.ts", "../../src/pdfjs-worker.d.ts", "../../src/utif.d.ts"]
 }

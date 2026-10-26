@@ -12,6 +12,7 @@
 import type { ReactNode } from "react";
 import type { SlideModel } from "../model/types";
 import type { MediaStore } from "../parser/media";
+import type { ViewerLabels } from "../types/public";
 
 export interface PageRenderContext {
   /** the page to draw; `page.index` is 0-based */
@@ -24,6 +25,13 @@ export interface PageRenderContext {
   /** false in thumbnails: no links, no pointer interaction */
   interactive: boolean;
   media: MediaStore;
+  /**
+   * The viewer's strings. A format that embeds a document of its own — the HTML
+   * frame is the only one today — needs to label it, and the label has to come
+   * from the same translated set as the rest of the chrome rather than from a
+   * hard-coded English string inside a parser.
+   */
+  labels: ViewerLabels;
   /** report a problem; the viewer buffers and exposes these as diagnostics */
   warn: (code: string, message: string) => void;
 }

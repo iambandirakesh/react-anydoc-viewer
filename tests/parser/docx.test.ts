@@ -20,6 +20,7 @@ import {
 } from "../fixtures/docx";
 import { TINY_PNG } from "../fixtures/pptx";
 import { buildPdf } from "../fixtures/pdf";
+import { buildXlsx } from "../fixtures/xlsx";
 import type { DocxParagraphBlock, ParagraphMeasurer } from "../../src/parser/docx/model";
 
 /** Letter, 1 inch margins. */
@@ -543,14 +544,15 @@ describe("DOCX failure modes", () => {
     await expect(loadDocument(bytes)).rejects.toMatchObject({ code: "MALFORMED_PRESENTATION" });
   });
 
-  it("reports spreadsheets as an unsupported format", async () => {
-    const { strToU8, zipSync } = await import("fflate");
-    const spreadsheet = zipSync({
-      "[Content_Types].xml": strToU8("<Types/>"),
-      "xl/workbook.xml": strToU8("<workbook/>"),
-    });
+  it("routes a spreadsheet to the spreadsheet parser, not the document one", async () => {
     const { loadDocument } = await import("../../src/parser/document");
-    await expect(loadDocument(spreadsheet)).rejects.toMatchObject({ code: "UNSUPPORTED_FORMAT" });
+    const spreadsheet = buildXlsx({
+      sheets: [{ name: "Sheet1", rows: [["Name"], ["Ada"]] }],
+    });
+    const parsed = await loadDocument(spreadsheet);
+    expect(parsed.format).toBe("xlsx");
+    expect(parsed.model.slides).toHaveLength(1);
+    parsed.dispose();
   });
 
   it("keeps the synchronous package path free of PDF work", () => {

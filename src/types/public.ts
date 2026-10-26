@@ -67,7 +67,7 @@ export interface ViewerLabels {
 export interface DocumentInfo {
   /** the format that was detected from the bytes */
   format: DocumentFormat;
-  /** number of pages: slides for .pptx, pages for .docx and .pdf */
+  /** number of pages: slides for .pptx, pages for .docx/.xlsx/.pdf/images/text */
   slideCount: number;
   /** slide width in EMU (914400 EMU = 1 inch) */
   widthEmu: number;
@@ -110,7 +110,7 @@ export interface DocumentViewerHandle {
 }
 
 export interface DocumentViewerProps {
-  /** the document to display: .pptx, .docx or .pdf */
+  /** the document to display: .pptx, .docx, .xlsx, .pdf, an image, a table or text */
   source?: DocumentSource | null;
   /** alias of `source`, matching the common `file="..."` usage */
   file?: DocumentSource | null;
@@ -156,6 +156,16 @@ export interface DocumentViewerProps {
   fetchOptions?: RequestInit;
   /** maximum bytes accepted from a URL response */
   maxDownloadBytes?: number;
+  /**
+   * How to read a text file whose content is ambiguous.
+   *
+   * A `.txt`, `.csv`, `.md` and `.json` file are all "bytes that decode as text",
+   * so the viewer decides from the content. Pass `"csv"`, `"markdown"`,
+   * `"json"`, `"html"` or `"text"` when the host already knows — for example
+   * from the upload's declared type — and the guess is not made. The bytes still
+   * decide whether the file can be read at all.
+   */
+  contentHint?: "text" | "csv" | "json" | "html" | "markdown";
   /**
    * URL of pdf.js's worker module (`pdf.worker.min.mjs`).
    *

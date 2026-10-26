@@ -32,6 +32,32 @@ export interface MediaStore {
   activeUrls: number;
 }
 
+/**
+ * A URL that hands `bytes` to the browser as an image of `mime`.
+ *
+ * Object URLs are used when they exist (they keep the bytes out of the DOM and
+ * out of the JS heap), and a `data:` URL otherwise, which is what keeps the
+ * component usable without a DOM. `null` means neither was available.
+ */
+export function createByteUrl(bytes: Uint8Array, mime: string): { url: string; revoke(): void } | null {
+  if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function" && typeof Blob !== "undefined") {
+    const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: mime }));
+    return {
+      url,
+      revoke: () => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          /* already revoked */
+        }
+      },
+    };
+  }
+  const base64 = toBase64(bytes);
+  if (base64.length === 0) return null;
+  return { url: `data:${mime};base64,${base64}`, revoke: () => undefined };
+}
+
 function toBase64(bytes: Uint8Array): string {
   const chunk = 0x8000;
   let binary = "";
@@ -70,6 +96,7 @@ export function createMediaStore(archive: Archive): MediaStore {
     typeof URL.createObjectURL === "function" &&
     typeof Blob !== "undefined";
 
+
   function kindOf(partName: string): ImageKind | null {
     const key = partName.toLowerCase();
     if (kinds.has(key)) return kinds.get(key) ?? null;
@@ -100,16 +127,11 @@ export function createMediaStore(archive: Archive): MediaStore {
       const kind = kindOf(partName);
       if (!kind) return null;
       const mime = mimeForKind(kind);
-      let url: string;
-      if (canUseObjectUrl) {
-        const blob = new Blob([bytes as unknown as BlobPart], { type: mime });
-        url = URL.createObjectURL(blob);
-        created.push(url);
-      } else {
-        url = `data:${mime};base64,${toBase64(bytes)}`;
-      }
-      urls.set(key, url);
-      return url;
+      const stored = createByteUrl(bytes, mime);
+      if (!stored) return null;
+      if (canUseObjectUrl) created.push(stored.url);
+      urls.set(key, stored.url);
+      return stored.url;
     },
     dispose() {
       if (canUseObjectUrl) {

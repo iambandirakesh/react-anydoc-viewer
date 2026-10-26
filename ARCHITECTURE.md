@@ -1,6 +1,7 @@
 # Architecture
 
-How `react-anydoc-viewer` turns a `.pptx`, `.docx` or `.pdf` file into pixels, and why
+How `react-anydoc-viewer` turns a `.pptx`, `.docx`, `.xlsx`, `.pdf` or image file
+into pixels, and why
 it is built this way. This is the design record for the decisions taken in phase 1
 of the project (research and architecture selection); the code follows it.
 
@@ -28,10 +29,11 @@ evaluated before any code was written:
 
 No existing package offers a maintained, permissively licensed *parser* for
 PresentationML, so that parser is implemented here, on top of two MIT/ISC
-dependencies: `fflate` (ZIP) and `fast-xml-parser` (XML). The WordprocessingML
-front-end is built the same way and shares everything downstream of the parse.
-Everything else is standard browser APIs, SVG and CSS — no WebAssembly and no
-rendering service (the only canvas in the project is a PDF page).
+dependencies: `fflate` (ZIP) and `fast-xml-parser` (XML). The WordprocessingML and
+SpreadsheetML front-ends are built the same way and share everything downstream of
+the parse. Everything else is standard browser APIs, SVG and CSS — no WebAssembly
+and no rendering service. Canvases appear only where a format *is* already a raster:
+a PDF page from pdf.js and a TIFF page from the lazy decoder.
 
 **PDF is the deliberate exception: reuse pdf.js.** A PDF is a program for a
 rendering engine (fonts, images, blend modes, filters, colour spaces), not a shape
@@ -77,6 +79,7 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
         ▼
   format             magic bytes → pdf | zip | ole; part names → pptx | docx | other
         │
+        ├─ raster ──────▶ image     header geometry + image or TIFF page renderer
         ├─ pdf ─────────▶ pdf       pdf.js document + a page renderer
         │
         ▼ (zip)
@@ -86,15 +89,16 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
   relationships      .rels graph, r:id → target resolution, external vs internal
         │
         ├─ pptx ────────▶ presentation   theme → master → layout → slides, media
-        │
-        └─ docx ────────▶ docx   styles → numbering → blocks → measure → pages
+        ├─ docx ────────▶ docx   styles → numbering → blocks → measure → pages
+        └─ xlsx ────────▶ xlsx   shared strings → styles → worksheets → grid pages
         │
         ▼
   PresentationModel  plain data, no XML, no DOM
         │
         ▼
   React components   DocumentViewer → SlideCanvas → SlideView → RenderShape/RenderText/…
-                     … or the format's own page renderer (PdfPage)
+                     … or the format's own page renderer
+                        (PdfPage, TiffPage, ImagePage, TextPage, GridPage, SheetPage)
 ```
 
 The boundary that matters is the `PresentationModel`: the parsers produce plain
@@ -105,21 +109,34 @@ made the second and third formats cheap: a page of a Word document is a slide wh
 shapes are paragraphs, tables and pictures, so navigation, zoom, thumbnails,
 presentation mode and the error boundary came for free.
 
-Two seams keep the exotic format out of the rest of the code:
+Two seams keep the exotic formats out of the rest of the code:
 
 - **`probePackage(names)`** decides *which* parser runs, from part names only — no
   extension, MIME type or file name is consulted anywhere in the pipeline.
 - **`PageRenderer`** (see `src/renderer/pageRenderer.ts`) lets a format draw a page
   itself instead of supplying shapes. `SlideCanvas` and `ThumbnailSidebar` call it
-  when it is present, so exactly one component knows that a PDF page is a canvas,
-  and the zoom scale is fed into the rasterisation so pages stay sharp.
+  when it is present, so exactly one component knows that a PDF or TIFF page is a
+  canvas, that an image is an `<img>`, that a text file is monospace lines and that
+  a table or worksheet is a grid, and the zoom scale is fed into the rasterisation
+  so pages stay sharp.
+  The context also carries the viewer's labels, so a renderer that wanted an
+  accessible name of its own would not hard-code English.
+
+Formats that are not OPC packages enter through the same entry point: an image is
+identified by its magic bytes, a text file by the fact that it decodes as text
+(with the *reading* — JSON, HTML, Markdown, delimited table, plain text — decided
+from the content, because text has no signature). Both are dispatched before the
+ZIP path. An HTML file is the same bytes as any other text file and takes the same
+path: it is paginated as source, with a diagnostic naming what it is. No renderer
+in the library ever executes file content, so there is no HTML frame to reason
+about.
 
 ### Parser (`src/parser`)
 
 | Module | Responsibility |
 | --- | --- |
 | `document.ts` | The single entry point every source funnels through: sniff the container, dispatch to the right parser, return `{ format, model, media, renderPage?, dispose }`. |
-| `format.ts` | Magic-byte container detection (`%PDF-`, OLE/CFB, ZIP) and package-kind detection from part names, plus the wording of the "this is an `.xlsx`, not a document" errors. |
+| `format.ts` | Magic-byte container detection (`%PDF-`, OLE/CFB, ZIP) and package-kind detection from part names, plus the wording of the "this is an `.xlsb`, not a document" errors. |
 | `archive.ts` | Reads the ZIP central directory with `fflate`, enforces every limit, rejects unsafe entry names, sniffs image formats from magic bytes. Inflates lazily and only for the parts the renderer needs. |
 | `relationships.ts` | Parses `.rels` parts and resolves ids relative to the source part, including `../` targets and `TargetMode="External"`. |
 | `xml.ts` | Wraps `fast-xml-parser` in `preserveOrder` mode so element order (z-order, run order, `mc:AlternateContent`) survives; drops the XML declaration; rejects DOCTYPE/ENTITY. |
@@ -129,12 +146,18 @@ Two seams keep the exotic format out of the rest of the code:
 | `text.ts` | Body properties (anchor, insets, autofit, wrap), paragraph properties, level styles, runs, bullets and numbering. |
 | `shapes.ts` | The shape-tree walker: `p:sp`, `p:pic`, `p:graphicFrame`, `p:grpSp`, `p:cxnSp`, `mc:AlternateContent`, with group coordinate-space mapping and placeholder inheritance. |
 | `table.ts`, `chart.ts` | Table grids (merges, per-edge borders) and chart families read from cached plot data. |
-| `media.ts` | Lazy object URLs (`data:` URLs where object URLs are unavailable), one per media part, revoked on dispose. |
+| `media.ts` | Lazy object URLs (`data:` URLs where object URLs are unavailable), one per media part, revoked on dispose. Shared byte-to-URL helper used by the image adapter. |
+| `ole.ts` | Identifies a compound file from its stream names (`Workbook`, `WordDocument`, `PowerPoint Document`, `EncryptedPackage`), so legacy binary files are reported by name instead of as "encrypted". |
+| `image.ts` | Header-only geometry for PNG/JPEG/GIF/BMP/WebP/SVG, the TIFF path (IFD pages + a canvas renderer), and the one-page model for a standalone image. |
+| `tiff.ts` | Bounded TIFF directory walking: page count and natural size from the IFD chain, without reading pixels. |
+| `xlsx/` | The SpreadsheetML front-end: `styles.ts` (number formats and dates), `model.ts` (the grid page data) and `index.ts` (workbook, relationships, shared strings, merged ranges, limits). |
+| `plaintext/` | The text front-end: `decode.ts` (BOM, UTF-8, UTF-16, Windows-1252 fallback), `classify.ts` (content-based classification and delimiter sniffing), `csv.ts` (quote-aware state machine), `paginate.ts` (wrapping and pagination) and `metrics.ts` (the page geometry and text metrics the page renderers import as well). |
+| `../formats.ts` | The format table: labels, extensions and MIME types, from which `SUPPORTED_EXTENSIONS`, `ACCEPT_ATTRIBUTE` and every "supported formats are …" message are generated. |
 | `presentation.ts` | Assembles everything: slide order from `sldIdLst`, layout/master resolution, inherited shape layers, background resolution, diagnostics. |
 | `docx/` | The whole Word front-end: `styles.ts` (style chain, doc defaults, numbering), `text.ts` (paragraphs → run/picture/page-break blocks), `table.ts`, `drawing.ts` (inline and anchored pictures), `layout.ts` (pagination) and `index.ts` (orchestration). |
 | `pdf.ts` | The pdf.js adapter: loads the engine lazily, reads page count, first-page geometry and metadata into a model, and returns a page renderer. Normalises pdf.js's own errors into the public error model. |
 
-Parsing is synchronous after the download for the two OOXML formats and produces
+Parsing is synchronous after the download for the three OOXML formats and produces
 one immutable model per source; the PDF path is asynchronous because pdf.js is
 (and, unlike the OOXML parsers, it is allowed to be — the viewer already awaits the
 load before committing it). Unsupported constructs become `Diagnostic` entries and,
@@ -151,6 +174,8 @@ where the renderer can, a labelled node — never a silent omission.
 | `style.ts` | Shared mapping of model values to CSS/SVG (fills, gradients, dash arrays, shadows, ids). |
 | `pageRenderer.ts` | The seam a non-shape format implements: given a page, its natural size, the current scale and a `warn` callback, return a node. Nothing else in the viewer knows PDFs exist. |
 | `PdfPage.tsx` | The PDF implementation of that seam: sizes a canvas from the scale × device pixel ratio (capped for memory), renders one page with pdf.js, cancels on unmount, and turns a failure into a labelled notice plus a diagnostic. |
+| `TiffPage.tsx` | The TIFF implementation of that seam: imports the decoder on demand, decodes one directory to RGBA, draws it on a canvas, and reports a page it cannot decode. |
+| `SheetPage.tsx` | The worksheet implementation of that seam: a scrollable HTML grid with sticky row/column headers, merges and a truncation notice. |
 | `measureParagraph.ts` | Measures laid-out text with a hidden mirror DOM (`kind: "layout"`), and falls back to a metrics-based estimate (`kind: "estimate"`) where no DOM is available, for example in SSR or a test environment. |
 | `DocumentViewer.tsx` | Public component: loading state machine, slide/zoom/fit state, keyboard handling, imperative handle, diagnostics, thumbnails, fullscreen. Format-agnostic: it forwards `renderPage` and maps the parsed model into `DocumentInfo`. |
 | `SlideCanvas.tsx` | Scroll container, measurement, memoised slide view, per-slide error boundary — and the one line that delegates to a format's own page renderer. |
@@ -163,8 +188,8 @@ another component's render is not allowed by React.
 
 ## Security model
 
-A `.pptx` is untrusted input, and the viewer is expected to run on user-uploaded
-files:
+Every supported file is untrusted input, and the viewer is expected to run on
+user-uploaded files:
 
 1. **Archive**: entry-count, per-entry, total-size and compression-ratio limits are
    checked against the central directory *before* anything is inflated; entry names
@@ -178,14 +203,18 @@ files:
 4. **Images**: SVG parts are served through `<img>`/blob URLs, where scripts do not
    run. Media never becomes part of the host document.
 5. **No HTML/JS execution from the file**: nothing in the pipeline evaluates
-   document content. Text is rendered as text nodes.
+   document content. Text is rendered as text nodes, and an HTML file is read as
+   text like any other: no iframe, no `srcdoc`, no `innerHTML`, so it has no origin
+   to script from and no request is made on its behalf.
 6. **Resource discipline**: object URLs are revoked on unmount and when the source
    changes; in-flight loads are aborted, and stale results are ignored.
-7. **Third-party engine**: pdf.js runs with `isEvalSupported: false`, so a PDF
+7. **Third-party decoders**: pdf.js runs with `isEvalSupported: false`, so a PDF
    cannot reach `eval`, and the page rasters it produces are capped (3× CSS density,
    8 megapixels) so a hostile page size cannot exhaust canvas memory. A PDF is
    handed to pdf.js as a copy of the bytes, because pdf.js transfers the buffer to
-   its worker.
+   its worker. TIFF directories are walked with bounds checks and decoded into a
+   canvas only when the page is visible; a directory that points outside the input,
+   loops forever or declares an absurd size is refused rather than followed.
 8. **One format registry, one dispatch**: the format is decided from the bytes, so
    there is no path where a file name influences which parser runs.
 
@@ -195,9 +224,10 @@ files:
   style, numbering) is parsed at most once and memoised by part name.
 - Only relevant parts are inflated — embedded workbooks, notes and diagrams are
   never decompressed.
-- `pdfjs-dist` is behind a dynamic `import()`, so it is downloaded only when a PDF
-  is opened, and only when the consumer's bundler code-splits. It never appears in
-  the library bundle (`external` in the build).
+- `pdfjs-dist` and the TIFF decoder are behind dynamic `import()`s, so they are
+  downloaded only when a PDF or a TIFF is opened, and only when the consumer's
+  bundler code-splits. Neither appears in the library bundle (`external` in the
+  build).
 - A `.docx` is paginated once, at load, by measuring each paragraph in a hidden
   mirror DOM; the measurement buffers are reused and removed afterwards.
 - Media bytes are turned into URLs on first use, so a deck with 200 images only
@@ -211,9 +241,10 @@ files:
 
 - **Fixtures are generated, not checked in**: `tests/fixtures/pptx.ts` writes real
   OOXML packages (masters, layouts, themes, slides, media, charts) with `fflate`,
-  `tests/fixtures/docx.ts` writes WordprocessingML packages, and
-  `tests/fixtures/pdf.ts` assembles a real PDF byte by byte (objects, xref, trailer,
-  metadata). No proprietary file is redistributed, and every edge case (missing
+  `tests/fixtures/docx.ts` writes WordprocessingML packages, `tests/fixtures/xlsx.ts`
+  writes SpreadsheetML workbooks, `tests/fixtures/tiff.ts` writes real IFD-based
+  TIFFs, and `tests/fixtures/pdf.ts` assembles a real PDF byte by byte (objects,
+  xref, trailer, metadata). No proprietary file is redistributed, and every edge case (missing
   relationship, missing part, empty slide, unsupported media, unsafe hyperlink,
   renamed format, encrypted file) can be produced exactly.
 - **Parser tests** run without a DOM.
@@ -222,8 +253,9 @@ files:
   the accessibility tree. PDF tests inject a fake pdf.js document through the
   `loadPdfJs` seam, which is why the adapter is typed structurally.
 - **Browser tests** (`npm run test:browser`) run in real Chrome against the demo:
-  they lay out a `.docx` into pages and rasterise a PDF page with pdf.js in a real
-  Web Worker, which no jsdom test can prove.
+  they lay out a `.docx` into pages, rasterise a PDF page with pdf.js in a real Web
+  Worker, draw a TIFF onto a canvas, and open a workbook grid — none of which a
+  jsdom test can prove.
 - **Security tests** assert the archive limits, ZIP-bomb rejection, path traversal
   filtering, XML entity refusal and hyperlink sanitisation.
 - **Package tests** (`npm run test:package`) build, `npm pack`, then install the
@@ -235,8 +267,8 @@ files:
 
 - The OOXML parsers are synchronous on the main thread; only PDF parsing can be
   moved off it, and only because pdf.js brings its own worker. A worker-based
-  implementation for `.pptx`/`.docx` would be the obvious next step for very large
-  files, at the cost of a bundling story for the worker.
+  implementation for `.pptx`/`.docx`/`.xlsx` would be the obvious next step for very
+  large files, at the cost of a bundling story for the worker.
 - Word pagination is the viewer's own, driven by measured text. It cannot match
   Word exactly while floating shapes, headers/footers and missing fonts are out of
   the model; the divergences are reported rather than hidden.

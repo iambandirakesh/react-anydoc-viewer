@@ -1,8 +1,9 @@
 # Compatibility matrix
 
 What `react-anydoc-viewer` renders today, what it renders approximately, and what it
-deliberately reports as unsupported — for all three formats: PowerPoint (`.pptx`),
-Word (`.docx`) and PDF.
+deliberately reports as unsupported, for every format it opens: PowerPoint
+(`.pptx`), Word (`.docx`), Excel (`.xlsx`, `.xlsm`), PDF, images (including TIFF),
+delimited text (`.csv`, `.tsv`) and text files (`.txt`, `.log`, `.json`, `.html`).
 
 Legend:
 
@@ -23,16 +24,17 @@ Everything in the "Reported" column produces an entry in the diagnostics panel
 | --- | --- | --- |
 | Format detection from bytes | Implemented | `%PDF-` header, OLE/CFB signature, ZIP/OPC signature; the extension and MIME type are never trusted |
 | OPC/ZIP package reading (`[Content_Types].xml`, `_rels/.rels`) | Implemented | Office-document part is discovered through relationships, not a hard-coded path |
-| Package kind from part names (`ppt/presentation.xml`, `word/document.xml`) | Implemented | A renamed or extension-less package still opens correctly |
-| Other OPC packages (`.xlsx`, OpenDocument) | Reported | `UNSUPPORTED_FORMAT` naming what the package actually is |
+| Package kind from part names (`ppt/presentation.xml`, `word/document.xml`, `xl/workbook.xml`) | Implemented | A renamed or extension-less package still opens correctly |
+| Other OPC packages (`.xlsb`, OpenDocument) | Reported | `UNSUPPORTED_FORMAT` naming what the package actually is |
 | Slide order via `p:sldIdLst` + `r:id` | Implemented | File names and numeric suffixes are never used for ordering |
 | Slide size (`p:sldSz` cx/cy) and aspect ratio | Implemented | Slide is never stretched; `fit` scales it uniformly |
 | Slide master, layout and theme resolution | Implemented | Layout → master → theme chain per slide |
 | Multiple masters/layouts | Partial | All layouts of the first master are read; a deck with several masters uses the first |
 | Core properties (title) | Implemented | Exposed on `onLoad` |
 | Notes slides, comments, custom XML, embedded workbooks | Not supported | Never inflated (they are not in the useful-parts filter) |
-| Encrypted / password-protected packages | Reported | `ENCRYPTED` error (detected from the OLE/CFB signature) |
-| Legacy binary `.ppt` / `.doc` | Reported | `ENCRYPTED` error, because the OLE container is indistinguishable from an encrypted OOXML file |
+| Encrypted / password-protected packages | Reported | `ENCRYPTED` error, recognised from the `EncryptedPackage`/`EncryptionInfo` streams in the OLE/CFB container |
+| Legacy binary `.ppt` / `.doc` / `.xls` | Reported | `UNSUPPORTED_FORMAT`, naming the format (e.g. "a legacy Excel 97-2003 workbook (.xls)") and suggesting an export. Identified from the compound file's stream names (`WordDocument`, `PowerPoint Document`, `Workbook`/`Book`) |
+| An OLE/CFB container whose streams cannot be read | Reported | `ENCRYPTED`, the conservative reading: it is either an encrypted package or a binary format |
 | Corrupted/truncated package | Reported | `CORRUPT_PACKAGE` error, or per-part diagnostics |
 
 ## Slide content
@@ -101,7 +103,8 @@ Everything in the "Reported" column produces an entry in the diagnostics panel
 | PNG, JPEG, GIF, WebP, BMP, SVG | Implemented | Sniffed from magic bytes; declared content type is not trusted |
 | Cropping (`srcRect`) and aspect preservation | Implemented | |
 | Duplicate/reused images | Implemented | One object URL per media part, revoked on unmount |
-| EMF/WMF/TIFF | Reported | Browsers cannot decode them; labelled placeholder |
+| TIFF | Implemented | Decoded by the viewer's lazy TIFF reader and drawn on a canvas |
+| EMF/WMF | Reported | Browsers cannot decode them; labelled placeholder |
 | Very large images | Implemented | Decoded lazily by the browser; archive limits protect the parser |
 | Image decode failure at render time | Reported | `picture.decode` diagnostic and a labelled placeholder; the rest of the slide still renders |
 
@@ -171,7 +174,31 @@ same code paths.
 | `altChunk` (embedded HTML/RTF) | Reported | `docx.altChunk` |
 | Fields (`w:fldSimple`, `PAGE`, `TOC`) | Partial | Cached field text is kept; `fldChar`/`instrText` plumbing and computed values are not decoded |
 | Tab stops (`w:tabs`), bookmark navigation | Partial | A `w:tab` renders as a tab character at the default interval; custom stops and bookmark jumps are not resolved |
-| `.doc` (legacy binary) | Reported | `ENCRYPTED` error from the OLE signature |
+| `.doc` (legacy binary) | Reported | `UNSUPPORTED_FORMAT` naming the legacy Word binary; an encrypted `.docx` is still `ENCRYPTED` |
+
+## Excel workbooks (`.xlsx`, `.xlsm`)
+
+A workbook is read from SpreadsheetML and each worksheet becomes a grid page
+(hidden sheets are shown, with a diagnostic). Sheets are resolved through `xl/_rels/workbook.xml.rels`, so a
+renamed or reordered package still shows the right sheets. Nothing is evaluated:
+formulas display the cached result, and a formula without one is reported.
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Workbook and sheet order (`xl/workbook.xml` + relationships) | Implemented | Part names and numeric suffixes are not used for ordering |
+| Shared strings, inline strings, numbers, booleans, error values | Implemented | Values are always text in the DOM, never markup |
+| Number formats: general, date, date-time, percentage, custom codes | Partial | Common built-in and custom date/percent formats are recognised; an unrecognised code falls back to the raw number with a diagnostic |
+| Date systems 1900 and 1904 | Implemented | The 1900 leap-year quirk is preserved |
+| Formulas | Partial | The cached `<v>` is shown; formulas are never recalculated (`xlsx.formula.cache` when absent) |
+| Sparse rows/columns | Implemented | Cells keep their real coordinates; empty rows are not collapsed |
+| Merged ranges (`mergeCells`) | Implemented | `colspan`/`rowspan`; overlapping or hidden-content ranges are reported |
+| Column widths (`cols`) | Implemented | Converted to pixels; default width otherwise |
+| Hidden sheets | Implemented | Shown, with an info diagnostic naming them |
+| Charts, pivot tables, conditional formatting, images, comments | Reported | `xlsx.sheet.kind` / not read; the grid is unaffected |
+| Chartsheets and dialog sheets | Reported | Named in a diagnostic; not drawn |
+| Macros (`.xlsm`) | Not supported | The macro part is never read or executed |
+| Cell and row caps | Partial | 50 000 cells parsed, 10 000 cells rendered per page, 5 000 rows / 200 columns per sheet, 2 000 merges; each cap is reported instead of freezing |
+| `.xls` (legacy binary) | Reported | `UNSUPPORTED_FORMAT` naming the legacy Excel binary |
 
 ## PDF files
 
@@ -213,10 +240,56 @@ ships; the viewer does not attempt to read PDF content streams itself.
 | Print / PDF export | Not supported | Out of scope |
 | Editing | Not supported | Out of scope |
 
+## Images
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Detection from magic bytes | Implemented | PNG, JPEG, GIF, BMP, WebP, AVIF and text-SVG; a container signature still wins over image bytes |
+| Natural size read from the header | Implemented | PNG `IHDR`, JPEG `SOFn` marker chain, GIF logical screen, BMP info header, WebP `VP8X`/`VP8 `/`VP8L`, SVG `width`/`height` or `viewBox` |
+| Header without a usable size | Partial | The image is drawn in a default 1024×768 box, letterboxed, and a diagnostic says so |
+| AVIF size | Partial | AVIF is detected and decoded by the browser, but its size is not read from the `ispe` box, so the page uses the default box |
+| TIFF (`.tif`, `.tiff`) | Implemented | The IFD chain gives every page and its natural size; pages are decoded to RGBA and drawn on a canvas, so no browser TIFF support is needed. A page that cannot be decoded shows a labelled notice (`tiff.page`) |
+| EMF / WMF | Reported | `UNSUPPORTED_FORMAT` naming the format; no browser decodes them, so they are not guessed at |
+| Animation (animated GIF, animated WebP) | Implemented | The browser animates the `<img>`; the page is its first frame's size |
+| EXIF orientation | Implemented | Handled by the browser (`image-orientation: from-image`), never by the viewer |
+| Metadata (camera, GPS, colour profile) | Not supported | Not read, and therefore not exposed to the page |
+
+## Delimited text (`.csv`, `.tsv`)
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Delimiter detection | Implemented | Comma, semicolon, tab or pipe; chosen by the candidate with a consistent field count across the sample, counting only delimiters outside quotes. Overridable with `contentHint` |
+| Quoted fields, `""` escapes, embedded newlines | Implemented | Character-by-character state machine, not `split()` |
+| CRLF / LF / CR records, missing final newline | Implemented | All four endings |
+| Values kept as text | Implemented | No number, date or boolean coercion; `0123` stays `0123` |
+| Rows that do not match the header | Reported | Counted in a diagnostic; values are shown as they are, never padded or shifted |
+| Wide tables | Partial | A table wider than a portrait page gets a landscape page; wider than that and the columns are scaled down and clipped, with a diagnostic |
+| Header row | Implemented | Repeated at the top of every page |
+| Row limit | Partial | 20 000 rows kept (configurable in code, reported as a diagnostic when exceeded) |
+| Encoding | Implemented | UTF-8, UTF-16 (with or without a BOM), otherwise Windows-1252 with a warning |
+| Type inference, formulas, multi-line cells beyond quoting | Not supported | Out of scope: this is a viewer, not a spreadsheet |
+
+## Text files (`.txt`, `.log`, `.json`, `.html`, `.htm`)
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Pagination | Implemented | Monospace, 12px on a 16px baseline, US Letter, wrapped to the page's column count, 1000 pages maximum |
+| Line endings and tabs | Implemented | CRLF/CR/LF; tabs expanded to 4 spaces before measuring |
+| Control characters | Implemented | Stripped before rendering; the text cannot smuggle terminal escapes into the DOM |
+| Encoding detection | Implemented | UTF-8 (with or without a BOM), UTF-16 (with a BOM, or from its NUL pattern), otherwise Windows-1252 with a warning |
+| JSON | Implemented | Pretty-printed with two-space indent up to 2 MiB; larger files are shown as they are, with a diagnostic |
+| HTML | Implemented | Shown as **source text** — never parsed, never framed, never executed, and never given an origin, so nothing in it can run or load. There is no rendering option |
+| Markdown | Partial | Currently shown as source text, with a diagnostic saying so |
+| Syntax highlighting | Not supported | Out of scope for now |
+| Text selection and search | Implemented | Real text in the DOM, so the browser's own find and select work |
+| Whitespace-only or binary bytes | Reported | Refused as not a document (`NOT_A_PRESENTATION`), rather than shown as a blank page |
+
 ## Test coverage behind these claims
 
-The matrix above is backed by the automated suite (`npm test`, 151 tests, and
-`npm run test:browser`, 17 Playwright tests in real Chrome) plus the browser demo.
+The matrix above is backed by the automated suite (`npm test` and
+`npm run test:browser` in real Chrome) plus the browser demo. The browser suite
+opens every supported type — deck, document, workbook, PDF, TIFF, raster image,
+table and text — through the demo's own file picker.
 Coverage includes: format detection from bytes, slide order from relationships,
 theme colour resolution and modifiers, table merges, chart series and
 doughnut hole sizes, group transforms, custom geometry, bullets from master styles,
@@ -231,6 +304,19 @@ missing-main-part error. For PDF: detection, page count and geometry from a real
 PDF, the metadata title, a damaged file and an encrypted file, plus a browser test
 that rasterises an actual page onto a canvas with a real worker.
 
+For images: every supported header is measured against a fixture (including a
+top-down BMP and a truncated PNG), an undecodable format is refused by name, and a
+real browser test uploads a PNG and checks the page box matches it. For delimited
+text: delimiter detection (comma, semicolon, tab, quoted commas, inconsistent
+rows), CRLF/CR/LF endings, escaped quotes, embedded newlines, ragged rows, the row
+limit, and header repetition across pages. For text files: BOM and encoding cases,
+whitespace-only and binary rejection, JSON pretty-printing, wrapping, page overflow
+and the page ceiling. For HTML: it is read as text with a diagnostic saying so, and
+a browser test uploads a hostile page — one that scripts the host document, calls
+`fetch` and loads a remote image — and asserts against the host page and the
+network that none of it happened: no frame anywhere in the stage, no global
+assigned, no `pageerror`, and no response at all for the beacon.
+
 It does **not** include a corpus of real-world Office documents. Compatibility
-claims therefore describe the constructs listed above, not "any .pptx, .docx or
-.pdf file".
+claims therefore describe the constructs listed above, not "any .pptx, .docx,
+.xlsx, .pdf or .tiff file".

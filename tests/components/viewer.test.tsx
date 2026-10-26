@@ -781,3 +781,114 @@ function SlideCanvasForTest({
     />
   );
 }
+
+describe("DocumentViewer with text, table and image files", () => {
+  const encode = (text: string) => new TextEncoder().encode(text);
+
+  it("renders a text file as monospace pages, and reports it as text", async () => {
+    const onLoad = vi.fn();
+    const { container } = render(
+      <DocumentViewer source={encode("first line\nsecond line")} onLoad={onLoad} />,
+    );
+    await waitForReady(container);
+    const page = container.querySelector("[data-testid='rv-text-page']");
+    expect(page?.textContent).toContain("first line");
+    expect(page?.textContent).toContain("second line");
+    expect(onLoad.mock.calls[0]?.[0]?.format).toBe("text");
+    expect(onLoad.mock.calls[0]?.[0]?.slideCount).toBe(1);
+    // A page of paper, not a box the size of the text on it.
+    expect(onLoad.mock.calls[0]?.[0]?.aspectRatio).toBeCloseTo(816 / 1056, 3);
+  });
+
+  it("renders a CSV file as a table with its header row", async () => {
+    const onLoad = vi.fn();
+    const { container } = render(
+      <DocumentViewer source={encode("id,name\n1,Ada\n2,Grace\n")} onLoad={onLoad} />,
+    );
+    await waitForReady(container);
+    const grid = container.querySelector("[data-testid='rv-grid-page']");
+    expect(grid).toBeTruthy();
+    expect(grid?.querySelector("th")?.textContent).toBe("id");
+    expect(grid?.textContent).toContain("Ada");
+    expect(grid?.textContent).toContain("Grace");
+    expect(onLoad.mock.calls[0]?.[0]?.format).toBe("csv");
+  });
+
+  it("paginates a long table and repeats the header on every page", async () => {
+    const rows = Array.from({ length: 60 }, (_, i) => `${i},row ${i}`).join("\n");
+    const { container } = render(<DocumentViewer source={encode(`id,label\n${rows}\n`)} showControls />);
+    await waitForReady(container);
+    expect(container.textContent).toContain("1 / 2");
+
+    fireEvent.click(screen.getByLabelText("Next slide"));
+    await waitFor(() => expect(container.textContent).toContain("2 / 2"));
+    const grid = container.querySelector("[data-testid='rv-grid-page']");
+    expect(grid?.querySelector("th")?.textContent).toBe("id");
+    expect(grid?.textContent).toContain("row 59");
+  });
+
+  it("paginates a long text file and navigates it like a deck", async () => {
+    const lines = Array.from({ length: 120 }, (_, i) => `line ${i}`).join("\n");
+    const { container } = render(<DocumentViewer source={encode(lines)} showControls />);
+    await waitForReady(container);
+    expect(container.textContent).toContain("1 / 3");
+    fireEvent.click(screen.getByLabelText("Next slide"));
+    await waitFor(() => expect(container.textContent).toContain("2 / 3"));
+    expect(container.querySelector("[data-testid='rv-text-page']")?.textContent).toContain("line 60");
+  });
+
+  it("renders an image as one page sized from the file", async () => {
+    const onLoad = vi.fn();
+    const { container } = render(<DocumentViewer source={RED_PNG} onLoad={onLoad} />);
+    await waitForReady(container);
+    const image = container.querySelector("[data-testid='rv-image-page']");
+    expect(image).toBeTruthy();
+    expect(image?.getAttribute("src")).toMatch(/^(blob:|data:image\/png)/);
+    expect(onLoad.mock.calls[0]?.[0]?.format).toBe("image");
+    expect(onLoad.mock.calls[0]?.[0]?.slideCount).toBe(1);
+  });
+
+  it("refuses an image the browser cannot decode, naming the format", async () => {
+    // A WMF metafile: recognised, but no browser can draw it through an <img>.
+    const wmf = new Uint8Array([0xd7, 0xcd, 0xc6, 0x9a, 0x00, 0x00, 0x00, 0x00]);
+    const { container } = render(<DocumentViewer source={wmf} />);
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='rv-error-code']")?.textContent).toBe("UNSUPPORTED_FORMAT");
+    });
+    expect(container.textContent).toContain("WMF");
+  });
+
+  it("never executes markup from an HTML file", async () => {
+    const { container } = render(
+      <DocumentViewer source={encode('<!doctype html><html><script>window.__pwned = 1</script></html>')} />,
+    );
+    await waitForReady(container);
+    // The source is displayed as text; no script element was created, and the
+    // global the file would have set is untouched.
+    expect(container.querySelector("[data-testid='rv-text-page']")?.textContent).toContain("window.__pwned");
+    expect(container.querySelector("script")).toBeNull();
+    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+  });
+
+  it("shows an HTML file as source, and never puts it in a frame", async () => {
+    const onLoad = vi.fn();
+    const { container } = render(
+      <DocumentViewer
+        source={encode("<!doctype html><html><body><p>hello</p></body></html>")}
+        showControls
+        onLoad={onLoad}
+      />,
+    );
+    await waitForReady(container);
+    expect(container.querySelector("[data-testid='rv-text-page']")?.textContent).toContain("<p>hello</p>");
+    // No frame, no origin of its own, and no control offering one.
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(screen.queryByLabelText("Show rendered")).toBeNull();
+    expect(onLoad.mock.calls[0]?.[0]?.format).toBe("text");
+    expect(onLoad.mock.calls[0]?.[0]?.slideCount).toBe(1);
+    // Recognised as HTML, and read as source: the diagnostic is the whole story.
+    expect(
+      onLoad.mock.calls[0]?.[0]?.diagnostics.map((entry: { code: string }) => entry.code),
+    ).toContain("text.html.source");
+  });
+});

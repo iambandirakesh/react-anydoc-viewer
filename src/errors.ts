@@ -67,10 +67,24 @@ export function isDocumentViewerError(value: unknown): value is DocumentViewerEr
   return value instanceof DocumentViewerError;
 }
 
-export type DocumentFormat = "pptx" | "docx" | "pdf";
+export type DocumentFormat = "pptx" | "docx" | "xlsx" | "pdf" | "image" | "csv" | "text";
 
-/** The formats the viewer can open, for error messages and documentation. */
-export const SUPPORTED_FORMATS: readonly DocumentFormat[] = ["pptx", "docx", "pdf"];
+/**
+ * The formats the viewer can open, for error messages and documentation.
+ *
+ * This list and the extension table in `src/formats.ts` are kept in step by a
+ * unit test and by the package gate, so a format cannot be advertised in one
+ * place and missing from the other.
+ */
+export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
+  "pptx",
+  "docx",
+  "xlsx",
+  "pdf",
+  "image",
+  "csv",
+  "text",
+];
 
 /** Map an {@link AbortError} or an aborted request into a normalised error. */
 export function abortedError(): DocumentViewerError {
