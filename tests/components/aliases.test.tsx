@@ -96,7 +96,7 @@ describe("deprecated names", () => {
 
   it("exposes the format-neutral names on the package entry point", () => {
     expect(typeof api.DocumentViewer).toBe("object");
-    expect(api.SUPPORTED_FORMATS).toEqual(["pptx", "docx", "pdf", "image", "csv", "text"]);
+    expect(api.SUPPORTED_FORMATS).toEqual(["pptx", "docx", "xlsx", "pdf", "image", "csv", "text"]);
     expect(api.SUPPORTED_EXTENSIONS).toContain(".pptx");
     expect(api.ACCEPT_ATTRIBUTE).toContain("application/pdf");
     expect(typeof api.detectPdfEngine()).toBe("string");

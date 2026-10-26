@@ -16,7 +16,7 @@
 
 import type { PresentationModel } from "../model/types";
 import { DocumentViewerError, type DocumentFormat } from "../errors";
-import { isBrowserRenderable, readArchive, sniffImageKind, type ArchiveLimits } from "./archive";
+import { isViewerRenderable, readArchive, sniffImageKind, type ArchiveLimits } from "./archive";
 import { probePackage, sniffContainer, unsupportedFormatMessage } from "./format";
 import { parseImageDocument, unsupportedImageMessage } from "./image";
 import { detectPlainTextKind, parsePlainTextDocument } from "./plaintext";
@@ -24,6 +24,7 @@ import type { PlainTextKind } from "./plaintext/classify";
 import { loadPresentationBytes, normalizeError, type LoadOptions, type ViewerSource } from "./loadPresentation";
 import { parsePresentationArchive } from "./presentation";
 import { parseDocxArchive, type ParsedDocx } from "./docx";
+import { parseXlsxArchive } from "./xlsx";
 import { parsePdfDocument, type PdfEngine, type PdfJsLoader } from "./pdf";
 import type { MediaStore } from "./media";
 import type { PageRenderer } from "../renderer/pageRenderer";
@@ -66,7 +67,7 @@ export function detectFormat(bytes: Uint8Array): DocumentFormat | "legacy" | "un
   if (container !== "zip") {
     // A container signature wins over the image magic bytes, so a ZIP whose
     // first entry happens to start with an image header is still a package.
-    if (isBrowserRenderable(sniffImageKind(bytes))) return "image";
+    if (isViewerRenderable(sniffImageKind(bytes))) return "image";
     // Text has no signature, so decoding is the detection: anything that
     // decodes as text is a text document, classified by its content.
     return detectPlainTextKind(bytes) ?? "unknown";
@@ -80,7 +81,7 @@ export function detectFormat(bytes: Uint8Array): DocumentFormat | "legacy" | "un
 }
 
 /**
- * Parse a ZIP/OPC package (`.pptx` or `.docx`) synchronously.
+ * Parse a ZIP/OPC package (`.pptx`, `.docx` or `.xlsx`) synchronously.
  *
  * PDFs need an async engine, so they are rejected here with a message pointing at
  * {@link parseDocumentBytes}; everything else keeps the synchronous fast path the
@@ -109,6 +110,19 @@ export function parsePackageBytes(bytes: Uint8Array, options: DocumentParseOptio
     });
     return { format: "docx", model: parsed.model, media: parsed.media, dispose: parsed.dispose };
   }
+  if (probe.format === "xlsx") {
+    const parsed = parseXlsxArchive(archive, {
+      limits: options.limits,
+      maxDiagnostics: options.maxDiagnostics,
+    });
+    return {
+      format: "xlsx",
+      model: parsed.model,
+      media: parsed.media,
+      renderPage: parsed.renderPage,
+      dispose: parsed.dispose,
+    };
+  }
   throw new DocumentViewerError("UNSUPPORTED_FORMAT", unsupportedFormatMessage(probe.label), {
     detail: probe.mainPart ?? undefined,
   });
@@ -136,7 +150,7 @@ export async function parseDocumentBytes(
     // Not a container at all: the only files that get this far are images, and
     // everything else is refused with the same wording as an unknown package.
     const kind = sniffImageKind(bytes);
-    if (isBrowserRenderable(kind)) {
+    if (isViewerRenderable(kind)) {
       const parsed = parseImageDocument(bytes, { maxDiagnostics: options.maxDiagnostics });
       return {
         format: "image",
@@ -147,7 +161,8 @@ export async function parseDocumentBytes(
       };
     }
     if (kind !== "unknown") {
-      // TIFF/EMF/WMF: a real image, but not one this browser can draw.
+      // EMF/WMF: a real image, but not one this browser can draw. TIFF is
+      // handled above through its own decoder.
       throw new DocumentViewerError("UNSUPPORTED_FORMAT", unsupportedImageMessage(kind), {
         detail: `detected image kind: ${kind}`,
       });

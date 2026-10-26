@@ -23,6 +23,7 @@ import type { PresentationModel, SlideModel } from "../model/types";
 import { DocumentViewerError } from "../errors";
 import {
   isBrowserRenderable,
+  isViewerRenderable,
   mimeForKind,
   sniffImageKind,
   type ImageKind,
@@ -32,6 +33,8 @@ import { DEFAULT_COLOR_MAP, createEmptyTheme } from "./theme";
 import { pxToEmu } from "./units";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "./diagnostics";
 import { createImagePageRenderer } from "../components/ImagePage";
+import { createTiffPageRenderer } from "../components/TiffPage";
+import { readTiffPages } from "./tiff";
 import type { PageRenderer } from "../renderer/pageRenderer";
 
 export interface ImageInfo {
@@ -217,6 +220,11 @@ export function readImageInfo(bytes: Uint8Array): ImageInfo {
     case "svg":
       size = svgSize(bytes);
       break;
+    case "tiff": {
+      const first = readTiffPages(bytes)[0];
+      size = first && first.width > 0 && first.height > 0 ? [first.width, first.height] : null;
+      break;
+    }
     default:
       size = null;
   }
@@ -229,7 +237,6 @@ export function readImageInfo(bytes: Uint8Array): ImageInfo {
 /** Why a recognised image cannot be shown, in the words an end user needs. */
 export function unsupportedImageMessage(kind: ImageKind): string {
   const names: Partial<Record<ImageKind, string>> = {
-    tiff: "a TIFF image",
     emf: "an EMF metafile",
     wmf: "a WMF metafile",
     unknown: "an image",
@@ -238,15 +245,89 @@ export function unsupportedImageMessage(kind: ImageKind): string {
 }
 
 /**
- * Build a one-page model for an image.
+ * Build a one-page-per-directory model for a TIFF.
  *
- * A kind the browser cannot decode (TIFF, EMF, WMF — the vector/metafile
- * formats OOXML documents commonly embed) is refused with a specific message
- * rather than being rendered as a broken image.
+ * Browsers cannot draw TIFF through an `<img>`, so each directory becomes a page
+ * drawn by {@link createTiffPageRenderer}. The first page defines the document's
+ * page box; a later page with a different size is fitted into it rather than
+ * changing the geometry of the pages around it.
+ */
+function parseTiffDocument(bytes: Uint8Array, diagnostics: Diagnostics, info: ImageInfo): ParsedImage {
+  const directories = readTiffPages(bytes);
+  if (directories.length === 0) {
+    diagnostics.add({
+      severity: "warning",
+      code: "tiff.directory",
+      message: "The TIFF directory could not be read, so the image is shown in a default box and may fail to decode.",
+    });
+  }
+  const pages = directories.length > 0 ? directories : [{ width: 0, height: 0 }];
+  const first = pages[0] ?? { width: 0, height: 0 };
+  const width = first.width > 0 ? first.width : info.width ?? DEFAULT_SIZE.width;
+  const height = first.height > 0 ? first.height : info.height ?? DEFAULT_SIZE.height;
+
+  if (pages.some((page) => page.width === 0 || page.height === 0)) {
+    diagnostics.add({
+      severity: "warning",
+      code: "tiff.size-unknown",
+      message: "One or more TIFF pages do not declare a usable size; those pages are letterboxed into the first page's box.",
+    });
+  }
+  if (pages.length > 1) {
+    diagnostics.add({
+      severity: "info",
+      code: "tiff.multi-page",
+      message: `This TIFF contains ${pages.length} pages.`,
+    });
+  }
+
+  const slides: SlideModel[] = pages.map((_, index) => ({
+    index,
+    partName: `tiff#page${index + 1}`,
+    name: pages.length > 1 ? `Page ${index + 1}` : null,
+    slideshowHidden: false,
+    shapes: [],
+    inheritedShapes: [],
+    background: { type: "solid", color: { r: 255, g: 255, b: 255, a: 1 } },
+    diagnostics: [],
+  }));
+
+  const model: PresentationModel = {
+    width: pxToEmu(width),
+    height: pxToEmu(height),
+    slides,
+    theme: createEmptyTheme(),
+    colorMap: DEFAULT_COLOR_MAP,
+    textStyles: { title: [], body: [], other: [] },
+    title: null,
+    author: null,
+    partCount: pages.length,
+    diagnostics: diagnostics.list(),
+  };
+
+  const media = createEmptyMediaStore();
+  return {
+    format: "image",
+    model,
+    media,
+    renderPage: createTiffPageRenderer(bytes),
+    dispose: () => media.dispose(),
+  };
+}
+
+/**
+ * Build a model for a standalone image.
+ *
+ * A kind the browser cannot decode (EMF, WMF — the vector/metafile formats OOXML
+ * documents commonly embed) is refused with a specific message rather than being
+ * rendered as a broken image. TIFF takes the decoder path above; every other
+ * advertised image is handed to an `<img>` as an object URL.
  */
 export function parseImageDocument(bytes: Uint8Array, options: { maxDiagnostics?: number } = {}): ParsedImage {
   const diagnostics = new Diagnostics(options.maxDiagnostics ?? DEFAULT_MAX_DIAGNOSTICS);
   const info = readImageInfo(bytes);
+
+  if (info.kind === "tiff") return parseTiffDocument(bytes, diagnostics, info);
 
   if (!isBrowserRenderable(info.kind)) {
     throw new DocumentViewerError("UNSUPPORTED_FORMAT", unsupportedImageMessage(info.kind), {

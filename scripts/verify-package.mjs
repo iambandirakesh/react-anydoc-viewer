@@ -170,14 +170,17 @@ assert.equal(PPTViewerError, DocumentViewerError, "PPTViewerError is the same cl
 assert.equal(isPPTViewerError, isDocumentViewerError, "isPPTViewerError is the same guard");
 assert.deepEqual(
   SUPPORTED_FORMATS,
-  ["pptx", "docx", "pdf", "image", "csv", "text"],
+  ["pptx", "docx", "xlsx", "pdf", "image", "csv", "text"],
   "the advertised formats are the implemented ones",
 );
 // The format table is the single source of truth, so a format cannot be
 // advertised without an entry (extensions, MIME types) next to it.
 assert.deepEqual(missingDescriptors(), [], "every advertised format has a descriptor");
 assert.ok(
-  SUPPORTED_EXTENSIONS.includes(".pptx") && SUPPORTED_EXTENSIONS.includes(".png"),
+  SUPPORTED_EXTENSIONS.includes(".pptx") &&
+    SUPPORTED_EXTENSIONS.includes(".xlsx") &&
+    SUPPORTED_EXTENSIONS.includes(".tiff") &&
+    SUPPORTED_EXTENSIONS.includes(".png"),
   "the extension list is exported and dot-prefixed",
 );
 assert.ok(

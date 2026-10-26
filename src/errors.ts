@@ -67,7 +67,7 @@ export function isDocumentViewerError(value: unknown): value is DocumentViewerEr
   return value instanceof DocumentViewerError;
 }
 
-export type DocumentFormat = "pptx" | "docx" | "pdf" | "image" | "csv" | "text";
+export type DocumentFormat = "pptx" | "docx" | "xlsx" | "pdf" | "image" | "csv" | "text";
 
 /**
  * The formats the viewer can open, for error messages and documentation.
@@ -79,6 +79,7 @@ export type DocumentFormat = "pptx" | "docx" | "pdf" | "image" | "csv" | "text";
 export const SUPPORTED_FORMATS: readonly DocumentFormat[] = [
   "pptx",
   "docx",
+  "xlsx",
   "pdf",
   "image",
   "csv",

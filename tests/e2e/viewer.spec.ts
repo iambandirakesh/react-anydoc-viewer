@@ -1,4 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { buildXlsx } from "../fixtures/xlsx";
+import { buildTiff } from "../fixtures/tiff";
+import { TINY_JPEG, buildBmp } from "../fixtures/images";
 
 /**
  * End-to-end checks against the demo application in real Chrome.
@@ -660,6 +663,144 @@ test.describe("PDF documents", () => {
     });
     await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "error");
     await expect(page.locator(".demo__stats dd").last()).toContainText("MALFORMED_DOCUMENT");
+  });
+});
+
+test.describe("Workbooks and TIFF images", () => {
+  test("opens a workbook as a read-only grid with real values and sheets", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+
+    await loadSample(page, "Load sample .xlsx");
+    await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("Excel workbook");
+    await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("2");
+    await expect(counter(page)).toHaveText("1 / 2");
+
+    const grid = page.locator(".radv-canvas [data-testid='rv-sheet-page']");
+    await expect(grid).toBeVisible();
+    await expect(grid).toContainText("Region");
+    await expect(grid).toContainText("North");
+    await expect(grid).toContainText("12.80%");
+    await expect(grid).toContainText("2024-01-01");
+    // The merged footer row really spans the sheet, and the formula shows its cache.
+    await expect(grid.locator("td[colspan='4']")).toContainText("never recalculated");
+    await expect(grid).toContainText("381420");
+
+    await page.getByRole("tab", { name: "Slide 2" }).click();
+    await expect(counter(page)).toHaveText("2 / 2");
+    await expect(page.locator(".radv-canvas [data-testid='rv-sheet-page']")).toContainText("Read-only grid");
+
+    expect(errors).toEqual([]);
+  });
+
+  test("decodes every page of a TIFF onto a canvas", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(error.message));
+
+    await loadSample(page, "Load sample .tiff");
+    await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("image");
+    await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("2");
+    await expect(counter(page)).toHaveText("1 / 2");
+
+    const canvas = page.locator('.radv-canvas [data-testid="rv-tiff-page"]');
+    await expect(canvas).toBeVisible();
+    // Real pixels: the fixture is a solid colour, so the canvas must contain it.
+    await expect
+      .poll(async () =>
+        canvas.evaluate((element) => {
+          const context = (element as HTMLCanvasElement).getContext("2d");
+          return context ? context.getImageData(10, 10, 1, 1).data[0] : 0;
+        }),
+      )
+      .toBeGreaterThan(180);
+    const pixel = await canvas.evaluate((element) => {
+      const context = (element as HTMLCanvasElement).getContext("2d");
+      if (!context) return null;
+      return [...context.getImageData(10, 10, 1, 1).data];
+    });
+    expect(pixel).not.toBeNull();
+    expect(pixel?.[1]).toBeLessThan(120);
+
+    await page.getByRole("tab", { name: "Slide 2" }).click();
+    await expect(counter(page)).toHaveText("2 / 2");
+    // Decoding is asynchronous, so the counter can change a frame before the new
+    // directory has been painted. Poll until the canvas really holds the second
+    // page's colour instead of reading the previous page's pixels.
+    await expect
+      .poll(async () =>
+        canvas.evaluate((element) => {
+          const context = (element as HTMLCanvasElement).getContext("2d");
+          return context ? context.getImageData(10, 10, 1, 1).data[2] : 0;
+        }),
+      )
+      .toBeGreaterThan(80);
+    const second = await canvas.evaluate((element) => {
+      const context = (element as HTMLCanvasElement).getContext("2d");
+      if (!context) return null;
+      return [...context.getImageData(10, 10, 1, 1).data];
+    });
+    // The second directory is blue, so the page really changed.
+    expect(second?.[0]).toBeLessThan(100);
+
+    expect(errors).toEqual([]);
+  });
+});
+
+test.describe("Every advertised format", () => {
+  test("opens each image extension and each text extension", async ({ page }) => {
+    await page.goto("/");
+    const input = page.locator('input[type="file"]');
+
+    for (const [name, mimeType, buffer] of [
+      ["pixel.bmp", "image/bmp", buildBmp()],
+      ["photo.jpg", "image/jpeg", TINY_JPEG],
+      ["photo.jpeg", "image/jpeg", TINY_JPEG],
+    ] as const) {
+      await input.setInputFiles({ name, mimeType, buffer: Buffer.from(buffer) });
+      await expect(page.locator(".radv-canvas [data-testid='rv-image-page']")).toBeVisible();
+      await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("image");
+    }
+
+    for (const [name, mimeType] of [
+      ["note.txt", "text/plain"],
+      ["page.htm", "text/htm"],
+      ["page.html", "text/html"],
+    ] as const) {
+      await input.setInputFiles({ name, mimeType, buffer: Buffer.from(`Contents of ${name}`) });
+      await expect(page.locator(".radv-canvas [data-testid='rv-text-page']")).toContainText(`Contents of ${name}`);
+      await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("text file");
+    }
+  });
+
+  test("names each legacy binary instead of guessing", async ({ page }) => {
+    await page.goto("/");
+    const input = page.locator('input[type="file"]');
+
+    /** The same minimal compound file the OLE unit tests use: a header and a stream name. */
+    const compoundFile = (stream: string): Buffer => {
+      const bytes = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+      for (let index = 0; index < 24; index += 1) bytes.push(0);
+      for (const character of stream) bytes.push(character.charCodeAt(0) & 0xff, 0);
+      for (let index = 0; index < 8; index += 1) bytes.push(0);
+      return Buffer.from(bytes);
+    };
+
+    for (const [name, mimeType, stream, extension] of [
+      ["old.doc", "application/msword", "WordDocument", ".doc"],
+      ["old.ppt", "application/vnd.ms-powerpoint", "PowerPoint Document", ".ppt"],
+      ["old.xls", "application/vnd.ms-excel", "Workbook", ".xls"],
+    ] as const) {
+      await input.setInputFiles({ name, mimeType, buffer: compoundFile(stream) });
+      await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "error");
+      await expect(page.locator(".radv-status-error")).toContainText("UNSUPPORTED_FORMAT");
+      await expect(page.locator(".radv-status-error")).toContainText(extension);
+    }
   });
 });
 

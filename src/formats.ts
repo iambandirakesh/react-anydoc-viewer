@@ -40,6 +40,17 @@ export const FORMAT_DESCRIPTORS: readonly FormatDescriptor[] = [
     mimeTypes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
   },
   {
+    format: "xlsx",
+    label: "Excel workbook",
+    // `.xlsm` is the same SpreadsheetML container with a macro part; the macro
+    // is never read or executed, so it can be opened read-only.
+    extensions: [".xlsx", ".xlsm"],
+    mimeTypes: [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ],
+  },
+  {
     format: "pdf",
     label: "PDF document",
     extensions: [".pdf"],
@@ -48,10 +59,11 @@ export const FORMAT_DESCRIPTORS: readonly FormatDescriptor[] = [
   {
     format: "image",
     label: "image",
-    // Every one of these is decoded by the image element itself; TIFF, EMF and
+    // Most are decoded by the image element itself. TIFF is included because
+    // the viewer carries a lazy decoder and a canvas renderer for it; EMF and
     // WMF are detected but deliberately not advertised, because no browser
     // decodes them and the viewer reports them instead of showing a broken box.
-    extensions: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".svg"],
+    extensions: [".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".svg", ".tif", ".tiff"],
     mimeTypes: [
       "image/png",
       "image/jpeg",
@@ -60,6 +72,7 @@ export const FORMAT_DESCRIPTORS: readonly FormatDescriptor[] = [
       "image/avif",
       "image/bmp",
       "image/svg+xml",
+      "image/tiff",
     ],
   },
   {

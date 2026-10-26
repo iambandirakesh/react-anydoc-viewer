@@ -2,8 +2,8 @@
 
 What `react-anydoc-viewer` renders today, what it renders approximately, and what it
 deliberately reports as unsupported, for every format it opens: PowerPoint
-(`.pptx`), Word (`.docx`), PDF, images, delimited text (`.csv`, `.tsv`) and text
-files (`.txt`, `.log`, `.json`, `.html`).
+(`.pptx`), Word (`.docx`), Excel (`.xlsx`, `.xlsm`), PDF, images (including TIFF),
+delimited text (`.csv`, `.tsv`) and text files (`.txt`, `.log`, `.json`, `.html`).
 
 Legend:
 
@@ -24,8 +24,8 @@ Everything in the "Reported" column produces an entry in the diagnostics panel
 | --- | --- | --- |
 | Format detection from bytes | Implemented | `%PDF-` header, OLE/CFB signature, ZIP/OPC signature; the extension and MIME type are never trusted |
 | OPC/ZIP package reading (`[Content_Types].xml`, `_rels/.rels`) | Implemented | Office-document part is discovered through relationships, not a hard-coded path |
-| Package kind from part names (`ppt/presentation.xml`, `word/document.xml`) | Implemented | A renamed or extension-less package still opens correctly |
-| Other OPC packages (`.xlsx`, OpenDocument) | Reported | `UNSUPPORTED_FORMAT` naming what the package actually is |
+| Package kind from part names (`ppt/presentation.xml`, `word/document.xml`, `xl/workbook.xml`) | Implemented | A renamed or extension-less package still opens correctly |
+| Other OPC packages (`.xlsb`, OpenDocument) | Reported | `UNSUPPORTED_FORMAT` naming what the package actually is |
 | Slide order via `p:sldIdLst` + `r:id` | Implemented | File names and numeric suffixes are never used for ordering |
 | Slide size (`p:sldSz` cx/cy) and aspect ratio | Implemented | Slide is never stretched; `fit` scales it uniformly |
 | Slide master, layout and theme resolution | Implemented | Layout → master → theme chain per slide |
@@ -103,7 +103,8 @@ Everything in the "Reported" column produces an entry in the diagnostics panel
 | PNG, JPEG, GIF, WebP, BMP, SVG | Implemented | Sniffed from magic bytes; declared content type is not trusted |
 | Cropping (`srcRect`) and aspect preservation | Implemented | |
 | Duplicate/reused images | Implemented | One object URL per media part, revoked on unmount |
-| EMF/WMF/TIFF | Reported | Browsers cannot decode them; labelled placeholder |
+| TIFF | Implemented | Decoded by the viewer's lazy TIFF reader and drawn on a canvas |
+| EMF/WMF | Reported | Browsers cannot decode them; labelled placeholder |
 | Very large images | Implemented | Decoded lazily by the browser; archive limits protect the parser |
 | Image decode failure at render time | Reported | `picture.decode` diagnostic and a labelled placeholder; the rest of the slide still renders |
 
@@ -173,7 +174,31 @@ same code paths.
 | `altChunk` (embedded HTML/RTF) | Reported | `docx.altChunk` |
 | Fields (`w:fldSimple`, `PAGE`, `TOC`) | Partial | Cached field text is kept; `fldChar`/`instrText` plumbing and computed values are not decoded |
 | Tab stops (`w:tabs`), bookmark navigation | Partial | A `w:tab` renders as a tab character at the default interval; custom stops and bookmark jumps are not resolved |
-| `.doc` (legacy binary) | Reported | `ENCRYPTED` error from the OLE signature |
+| `.doc` (legacy binary) | Reported | `UNSUPPORTED_FORMAT` naming the legacy Word binary; an encrypted `.docx` is still `ENCRYPTED` |
+
+## Excel workbooks (`.xlsx`, `.xlsm`)
+
+A workbook is read from SpreadsheetML and each worksheet becomes a grid page
+(hidden sheets are shown, with a diagnostic). Sheets are resolved through `xl/_rels/workbook.xml.rels`, so a
+renamed or reordered package still shows the right sheets. Nothing is evaluated:
+formulas display the cached result, and a formula without one is reported.
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Workbook and sheet order (`xl/workbook.xml` + relationships) | Implemented | Part names and numeric suffixes are not used for ordering |
+| Shared strings, inline strings, numbers, booleans, error values | Implemented | Values are always text in the DOM, never markup |
+| Number formats: general, date, date-time, percentage, custom codes | Partial | Common built-in and custom date/percent formats are recognised; an unrecognised code falls back to the raw number with a diagnostic |
+| Date systems 1900 and 1904 | Implemented | The 1900 leap-year quirk is preserved |
+| Formulas | Partial | The cached `<v>` is shown; formulas are never recalculated (`xlsx.formula.cache` when absent) |
+| Sparse rows/columns | Implemented | Cells keep their real coordinates; empty rows are not collapsed |
+| Merged ranges (`mergeCells`) | Implemented | `colspan`/`rowspan`; overlapping or hidden-content ranges are reported |
+| Column widths (`cols`) | Implemented | Converted to pixels; default width otherwise |
+| Hidden sheets | Implemented | Shown, with an info diagnostic naming them |
+| Charts, pivot tables, conditional formatting, images, comments | Reported | `xlsx.sheet.kind` / not read; the grid is unaffected |
+| Chartsheets and dialog sheets | Reported | Named in a diagnostic; not drawn |
+| Macros (`.xlsm`) | Not supported | The macro part is never read or executed |
+| Cell and row caps | Partial | 50 000 cells parsed, 10 000 cells rendered per page, 5 000 rows / 200 columns per sheet, 2 000 merges; each cap is reported instead of freezing |
+| `.xls` (legacy binary) | Reported | `UNSUPPORTED_FORMAT` naming the legacy Excel binary |
 
 ## PDF files
 
@@ -223,7 +248,8 @@ ships; the viewer does not attempt to read PDF content streams itself.
 | Natural size read from the header | Implemented | PNG `IHDR`, JPEG `SOFn` marker chain, GIF logical screen, BMP info header, WebP `VP8X`/`VP8 `/`VP8L`, SVG `width`/`height` or `viewBox` |
 | Header without a usable size | Partial | The image is drawn in a default 1024×768 box, letterboxed, and a diagnostic says so |
 | AVIF size | Partial | AVIF is detected and decoded by the browser, but its size is not read from the `ispe` box, so the page uses the default box |
-| TIFF / EMF / WMF | Reported | `UNSUPPORTED_FORMAT` naming the format; no browser decodes them, so they are not guessed at |
+| TIFF (`.tif`, `.tiff`) | Implemented | The IFD chain gives every page and its natural size; pages are decoded to RGBA and drawn on a canvas, so no browser TIFF support is needed. A page that cannot be decoded shows a labelled notice (`tiff.page`) |
+| EMF / WMF | Reported | `UNSUPPORTED_FORMAT` naming the format; no browser decodes them, so they are not guessed at |
 | Animation (animated GIF, animated WebP) | Implemented | The browser animates the `<img>`; the page is its first frame's size |
 | EXIF orientation | Implemented | Handled by the browser (`image-orientation: from-image`), never by the viewer |
 | Metadata (camera, GPS, colour profile) | Not supported | Not read, and therefore not exposed to the page |
@@ -260,8 +286,10 @@ ships; the viewer does not attempt to read PDF content streams itself.
 
 ## Test coverage behind these claims
 
-The matrix above is backed by the automated suite (`npm test`, 218 tests, and
-`npm run test:browser`, 21 Playwright tests in real Chrome) plus the browser demo.
+The matrix above is backed by the automated suite (`npm test` and
+`npm run test:browser` in real Chrome) plus the browser demo. The browser suite
+opens every supported type — deck, document, workbook, PDF, TIFF, raster image,
+table and text — through the demo's own file picker.
 Coverage includes: format detection from bytes, slide order from relationships,
 theme colour resolution and modifiers, table merges, chart series and
 doughnut hole sizes, group transforms, custom geometry, bullets from master styles,
@@ -290,5 +318,5 @@ network that none of it happened: no frame anywhere in the stage, no global
 assigned, no `pageerror`, and no response at all for the beacon.
 
 It does **not** include a corpus of real-world Office documents. Compatibility
-claims therefore describe the constructs listed above, not "any .pptx, .docx or
-.pdf file".
+claims therefore describe the constructs listed above, not "any .pptx, .docx,
+.xlsx, .pdf or .tiff file".

@@ -35,10 +35,10 @@ describe("probePackage", () => {
     expect(probePackage(["Word/Document.xml"]).format).toBe("docx");
   });
 
-  it("names formats the viewer cannot render instead of guessing", () => {
-    const spreadsheet = probePackage(["xl/workbook.xml"]);
-    expect(spreadsheet.format).toBeNull();
-    expect(spreadsheet.label).toContain(".xlsx");
+  it("identifies spreadsheets and names formats it cannot render instead of guessing", () => {
+    expect(probePackage(["xl/workbook.xml"]).format).toBe("xlsx");
+    expect(probePackage(["xl/workbook.bin"]).label).toContain(".xlsb");
+    expect(probePackage(["xl/workbook.bin"]).format).toBeNull();
     expect(probePackage(["mimetype", "content.xml"]).label).toContain("OpenDocument");
     expect(probePackage(["foo/bar.xml"]).label).toContain("unfamiliar");
   });
@@ -70,12 +70,12 @@ describe("detectFormat", () => {
     ).toBe("pptx");
   });
 
-  it("reports spreadsheets, binary bytes and legacy binaries separately", () => {
+  it("reports binary bytes and legacy binaries separately from spreadsheets", () => {
     const spreadsheet = zipSync({
       "[Content_Types].xml": strToU8("<Types/>"),
       "xl/workbook.xml": strToU8("<workbook/>"),
     });
-    expect(detectFormat(spreadsheet)).toBe("unknown");
+    expect(detectFormat(spreadsheet)).toBe("xlsx");
     // Binary bytes are not text: the text detector must not claim them.
     expect(detectFormat(bytes(1, 2, 3, 4, 5, 6, 7, 8))).toBe("unknown");
     expect(detectFormat(bytes(9, 9, 9, 9))).toBe("unknown");

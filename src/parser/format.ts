@@ -73,7 +73,6 @@ export function sniffContainer(bytes: Uint8Array): ContainerKind {
   return "unknown";
 }
 
-const SPREADSHEET_MARKERS = ["xl/workbook.xml", "xl/workbook.bin"];
 const PRESENTATION_MARKERS = ["ppt/presentation.xml"];
 const DOCUMENT_MARKERS = ["word/document.xml"];
 
@@ -94,8 +93,11 @@ export function probePackage(names: readonly string[]): PackageProbe {
   if (DOCUMENT_MARKERS.some(has)) {
     return { format: "docx", label: "a Word document (.docx)", mainPart: "word/document.xml" };
   }
-  if (SPREADSHEET_MARKERS.some(has)) {
-    return { format: null, label: "an Excel workbook (.xlsx)", mainPart: "xl/workbook.xml" };
+  if (has("xl/workbook.xml")) {
+    return { format: "xlsx", label: "an Excel workbook (.xlsx)", mainPart: "xl/workbook.xml" };
+  }
+  if (has("xl/workbook.bin")) {
+    return { format: null, label: "an Excel binary workbook (.xlsb)", mainPart: "xl/workbook.bin" };
   }
   if (has("mimetype")) {
     return { format: null, label: "an OpenDocument file", mainPart: null };

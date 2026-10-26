@@ -11,6 +11,18 @@ will be called out under **Changed**.
 
 ### Added
 
+- **Excel workbooks** (`.xlsx`, `.xlsm`): parsed from SpreadsheetML and drawn as a
+  read-only grid, one page per worksheet (hidden sheets included, with a
+  diagnostic). Shared strings, numbers, booleans, errors, dates (1900 and 1904
+  systems), percentages, merges, column widths and sparse coordinates are
+  supported. Formulas show the cached value the
+  producer wrote and are never evaluated; a formula without a cache is reported.
+  Charts, pivot tables, conditional formatting, comments and macros are reported,
+  not rendered, and cell/row caps keep a hostile sheet bounded.
+- **TIFF images** (`.tif`, `.tiff`): the IFD chain gives every page and its natural
+  size, and each page is decoded to RGBA and drawn on a canvas by a decoder that is
+  imported only when a TIFF is opened. Multi-page TIFFs get one viewer page per
+  directory; a page that cannot be decoded shows a labelled notice.
 - **Images**: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp` and `.svg`
   open as a one-page document. The page box is the image's own pixel size, read
   from the file header rather than guessed, and the bytes are always handed to the
@@ -24,7 +36,7 @@ will be called out under **Changed**.
   text on US-Letter pages. JSON is pretty-printed; HTML is shown as *source* and
   never executed; the encoding (UTF-8, UTF-16 with or without a mark, otherwise
   Windows-1252) is detected, reported, and never silently guessed.
-- Detection of images and of text-based files from their bytes. Text has no
+- Detection of images, TIFF and text-based files from their bytes. Text has no
   signature, so the reading is chosen by content: JSON, HTML, Markdown, a
   consistent delimiter table, otherwise plain text.
 - `SUPPORTED_EXTENSIONS` and `ACCEPT_ATTRIBUTE` exports, so a host's file picker
@@ -37,10 +49,12 @@ will be called out under **Changed**.
 - On-demand identification of OLE/CFB compound files from their stream names, so a
   legacy `.xls`/`.doc`/`.ppt` and an encrypted OOXML package are no longer reported
   as the same thing.
+- `utif` (MIT) as a lazy dependency for TIFF pixel decoding; it is imported only
+  when a TIFF is opened.
 
 ### Changed
 
-- **`DocumentFormat` gained `"image"`, `"csv"` and `"text"`**, and
+- **`DocumentFormat` gained `"image"`, `"csv"`, `"text"` and `"xlsx"`**, and
   `SUPPORTED_FORMATS` lists them. Code that switches exhaustively over the format
   needs new branches.
 - A legacy binary `.doc`, `.ppt` or `.xls` is now reported as `UNSUPPORTED_FORMAT`,

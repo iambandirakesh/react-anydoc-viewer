@@ -52,8 +52,16 @@ function bmpHeader(width: number, height: number): Uint8Array {
 
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 150"><rect width="300" height="150"/></svg>');
 
-/** A TIFF header: a real image, but not one a browser draws. */
+/** A TIFF header with no readable directory; still a real image to detect. */
 const TIFF = new Uint8Array([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00]);
+
+/** An EMF header: a real metafile, but not one a browser draws. */
+function emfHeader(): Uint8Array {
+  const bytes = new Uint8Array(48);
+  bytes.set([0x01, 0x00, 0x00, 0x00], 0);
+  bytes.set([0x20, 0x45, 0x4d, 0x46], 40); // " EMF"
+  return bytes;
+}
 
 /* ------------------------------------------------------------------ tests */
 
@@ -90,7 +98,8 @@ describe("detectFormat", () => {
 
   it("does not claim unknown bytes", () => {
     expect(detectFormat(new Uint8Array([1, 2, 3, 4, 5]))).toBe("unknown");
-    expect(detectFormat(TIFF)).toBe("unknown");
+    // A TIFF has a real signature even when its directory is damaged.
+    expect(detectFormat(TIFF)).toBe("image");
   });
 });
 
@@ -114,10 +123,10 @@ describe("parseImageDocument", () => {
   });
 
   it("refuses a format the browser cannot decode, naming it", () => {
-    expect(() => parseImageDocument(TIFF)).toThrowError(
+    expect(() => parseImageDocument(emfHeader())).toThrowError(
       expect.objectContaining({ code: "UNSUPPORTED_FORMAT" }),
     );
-    expect(unsupportedImageMessage("tiff")).toContain("TIFF");
+    expect(unsupportedImageMessage("emf")).toContain("EMF");
   });
 
   it("hands the bytes to the browser as an image URL", async () => {

@@ -849,12 +849,13 @@ describe("DocumentViewer with text, table and image files", () => {
   });
 
   it("refuses an image the browser cannot decode, naming the format", async () => {
-    const tiff = new Uint8Array([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00]);
-    const { container } = render(<DocumentViewer source={tiff} />);
+    // A WMF metafile: recognised, but no browser can draw it through an <img>.
+    const wmf = new Uint8Array([0xd7, 0xcd, 0xc6, 0x9a, 0x00, 0x00, 0x00, 0x00]);
+    const { container } = render(<DocumentViewer source={wmf} />);
     await waitFor(() => {
       expect(container.querySelector("[data-testid='rv-error-code']")?.textContent).toBe("UNSUPPORTED_FORMAT");
     });
-    expect(container.textContent).toContain("TIFF");
+    expect(container.textContent).toContain("WMF");
   });
 
   it("never executes markup from an HTML file", async () => {

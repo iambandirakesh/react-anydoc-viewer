@@ -1,17 +1,17 @@
 # react-anydoc-viewer
 
 A free, open-source React component that renders **PowerPoint (`.pptx`)**, **Word
-(`.docx`)**, **PDF**, **images**, **CSV/TSV tables** and **text files** directly in
-the browser.
+(`.docx`)**, **Excel workbooks (`.xlsx`/`.xlsm`)**, **PDF**, **images (TIFF
+included)**, **CSV/TSV tables** and **text files** directly in the browser.
 
 - **No watermark, no branding, no ads** — ever.
 - **No paid API, no SDK licence, no external service.** Parsing and rendering happen entirely on the client.
 - **One component for everything**: slide navigation, thumbnails, zoom and
   presentation mode do not care whether the file is a deck, a document, a PDF, a
   photograph, a spreadsheet extract or a log file.
-- **No new dependencies for the new formats.** Images, CSV, text and JSON are
-  handled with the ZIP/XML packages the library already had; pdf.js remains the
-  only heavy optional download, and only for PDFs.
+- **Lazy heavy paths.** Spreadsheets reuse the ZIP/XML reader the library already
+  had; pdf.js and the TIFF decoder are only downloaded when a PDF or a TIFF is
+  actually opened.
 - **Small public API**: one component, one optional handle, a typed error model.
 - **Presentation (slideshow) mode** built in — chrome-free playback with
   click/Space/arrow advance, for both mouse and keyboard audiences.
@@ -125,23 +125,24 @@ The viewer fills its parent element, so give the container a height:
 | --- | --- | --- |
 | `.pptx` | Parsed here into a shape model, then drawn with SVG + HTML | Slides, themes, images, tables and charts |
 | `.docx` | Parsed here, paginated in the browser, then drawn with the same shape renderer | A page is a slide as far as the viewer is concerned |
+| `.xlsx` `.xlsm` | Parsed here, then drawn as a read-only grid | Every worksheet becomes a page (hidden sheets included, with a diagnostic); formulas show their cached value and are never evaluated |
 | `.pdf` | Rasterised page by page by [pdf.js](https://mozilla.github.io/pdf.js/) onto a canvas | The engine every browser PDF viewer uses |
-| `.png` `.jpg` `.jpeg` `.gif` `.webp` `.avif` `.bmp` `.svg` | One page, sized from the file's own header | SVG included: an image is always an `<img>`, so it can never script your page |
+| `.png` `.jpg` `.jpeg` `.gif` `.webp` `.avif` `.bmp` `.svg` `.tif` `.tiff` | One page, sized from the file's own header | SVG is always an `<img>`, so it can never script your page. TIFF is decoded lazily and drawn on a canvas; multi-page TIFFs become multiple pages |
 | `.csv` `.tsv` | Parsed here, then drawn as a table with a repeated header row | Delimiter detected from the content; a wide table gets a landscape page |
 | `.txt` `.log` `.json` `.html` `.htm` `.md` | Paginated as monospace text on US-Letter pages | JSON is pretty-printed; Markdown is currently shown as source too, and an HTML file is always shown as **source** — never parsed, never framed, never executed |
 
 **The format is decided from the bytes, never from the file name.** `%PDF-`
 identifies a PDF, the ZIP/OPC header identifies a package, and the package's own
-part names (`ppt/presentation.xml`, `word/document.xml`) decide whether it is a
-deck or a document. Images are identified by their magic bytes. Text files have no
-signature at all, so the bytes decide *whether* a file is text and the content
-decides *how* to read it (JSON, HTML, a consistent-delimiter table, otherwise plain
-text) — pass `contentHint` when your application already knows.
+part names (`ppt/presentation.xml`, `word/document.xml`, `xl/workbook.xml`) decide
+whether it is a deck, a document or a spreadsheet. Images are identified by their
+magic bytes. Text files have no signature at all, so the bytes decide *whether* a
+file is text and the content decides *how* to read it (JSON, HTML, a
+consistent-delimiter table, otherwise plain text) — pass `contentHint` when your
+application already knows.
 
 A `.docx` renamed to `.pptx`, a file with no extension, or an `ArrayBuffer`
-straight from `fetch` all load correctly. A spreadsheet (`.xlsx`) is refused with a
-specific error instead of a guess, and a legacy binary `.doc`, `.ppt` or `.xls` is
-named as such rather than being described as encrypted.
+straight from `fetch` all load correctly. A legacy binary `.doc`, `.ppt` or `.xls`
+is reported by name rather than being described as encrypted.
 
 ### HTML files are shown as source
 
@@ -399,8 +400,8 @@ import { isDocumentViewerError } from "react-anydoc-viewer";
 | `UNSUPPORTED_INPUT` | `source` was not a supported input type or scheme |
 | `NETWORK_ERROR` | Download failed (network, CORS or HTTP status) |
 | `NOT_A_PRESENTATION` | The bytes are not a document of any supported format |
-| `UNSUPPORTED_FORMAT` | A real Office package, but not a format the viewer renders (`.xlsx`, OpenDocument, an unfamiliar OPC package) |
-| `ENCRYPTED` | Password-protected, or the legacy binary `.ppt`/`.doc` format |
+| `UNSUPPORTED_FORMAT` | A real Office package, but not a format the viewer renders (`.xlsb`, OpenDocument, an unfamiliar OPC package, legacy binary `.doc`/`.ppt`/`.xls`) |
+| `ENCRYPTED` | Password-protected, or an unidentifiable compound file |
 | `LIMIT_EXCEEDED` | A configured archive/download limit was exceeded |
 | `CORRUPT_PACKAGE` | The ZIP directory or an entry could not be read |
 | `NO_SLIDES` | No slide could be resolved from the presentation |
@@ -475,7 +476,7 @@ component.
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
-| `source` / `file` | `File \| Blob \| ArrayBuffer \| Uint8Array \| string \| URL` | — | The document to display: `.pptx`, `.docx` or `.pdf` |
+| `source` / `file` | `File \| Blob \| ArrayBuffer \| Uint8Array \| string \| URL` | — | The document to display: `.pptx`, `.docx`, `.xlsx`, `.pdf`, an image, a table or text |
 | `slide` | `number` | — | Controlled current slide (0-based) |
 | `defaultSlide` | `number` | `0` | Uncontrolled initial slide |
 | `showControls` | `boolean` | `true` | Show the toolbar |
@@ -543,7 +544,7 @@ layout styles rather than a complete style cascade; table cell styling
 as their 2-D equivalent; `mc:AlternateContent` uses the fallback branch.
 
 **Unsupported** — SmartArt, embedded OLE objects, animations and transitions,
-video/audio playback, EMF/WMF/TIFF images, 3-D shapes and effects, and the legacy
+video/audio playback, EMF/WMF images, 3-D shapes and effects, and the legacy
 binary `.ppt` format.
 
 ## Word documents
@@ -574,6 +575,38 @@ marks (insertions are kept, deletions skipped), embedded (`altChunk`) content, a
 section breaks, which are treated as page breaks with a diagnostic. Page breaks are
 computed from **measured** text — the browser gives the real line heights — with an
 estimated fallback (reported as `docx.layout.estimated`) where no DOM is available.
+
+## Spreadsheets
+
+An `.xlsx`/`.xlsm` workbook is read with the same ZIP/XML reader as the other
+packages. Each worksheet becomes a page of a read-only grid (hidden sheets are
+shown, with a diagnostic); the sheet list is the page list, so navigation,
+thumbnails, zoom and presentation mode work unchanged. `.xlsx` is detected from `xl/workbook.xml`, and worksheets
+are resolved through the workbook's relationships rather than by file order.
+
+| Supported | Notes |
+| --- | --- |
+| Shared strings, inline strings, numbers, booleans, error values | Shown exactly as stored; nothing is re-interpreted as markup or a formula |
+| Dates and percentages | Resolved from the cell's number format, including the 1904 date system |
+| Formulas | The cached `<v>` result the producer wrote is displayed; a formula with no cache is reported and shown empty. Nothing is ever evaluated |
+| Sparse rows and columns | Cells keep their real coordinates; empty rows are not collapsed |
+| Merged ranges and column widths | Merges become `colspan`/`rowspan`; explicitly sized columns are honoured |
+| Hidden sheets | Shown, because a reader may need the data Excel hides; an info diagnostic names them |
+| `docProps/core.xml` title and author | Exposed on `onLoad` |
+
+Reported rather than rendered: charts, pivot tables, conditional formatting,
+comments, images and drawing objects, defined names, macros and error-recovery
+repairs. Very large sheets are capped (50 000 parsed cells, 10 000 rendered cells
+per page) and the cap is reported as a diagnostic instead of freezing the tab.
+
+## TIFF images
+
+A TIFF cannot be handed to an `<img>` element in Chrome or Firefox, so the viewer
+walks the IFD chain to find every page and its natural size, then decodes each page
+to RGBA with a small MIT decoder that is imported **only when a TIFF is opened**.
+Uncompressed, LZW, PackBits and DEFLATE RGB/greyscale/palette TIFFs are handled by
+that decoder; a page that cannot be decoded shows a labelled notice instead of a
+broken image. Multi-page TIFFs get one viewer page per directory.
 
 ## PDF files
 
@@ -750,8 +783,13 @@ inside the effect that loads a PDF, so it is never touched during SSR.
   app if fidelity matters.
 - SmartArt, OLE objects, animations, transitions and media playback are not
   rendered.
-- EMF/WMF/TIFF images cannot be decoded by browsers; they render as labelled
-  placeholders.
+- EMF/WMF images cannot be decoded by browsers; they render as labelled
+  placeholders. TIFF is decoded by the viewer instead (a lazy MIT decoder), so it
+  is not limited by what the browser's `<img>` supports.
+- **Spreadsheets**: the grid is read-only. Formulas are shown from the cached value
+  the producer wrote, never recalculated; charts, pivot tables, conditional
+  formatting, comments and macros are not drawn. Very large sheets are capped and
+  the cap is reported in diagnostics.
 - Speaker notes are not parsed or displayed.
 - `mc:AlternateContent` renders the fallback branch, which is the conservative
   choice but can differ from modern PowerPoint output.
@@ -809,9 +847,9 @@ The demo app builds every sample in the browser (see
 [examples/demo/src/sampleDeck.ts](examples/demo/src/sampleDeck.ts),
 [examples/demo/src/sampleDocument.ts](examples/demo/src/sampleDocument.ts)), so no
 binary files are committed — including the PDF, which is assembled byte by byte. Open
-<http://localhost:5273> and press **Load sample deck**, **Load sample .docx** or
-**Load sample .pdf**; the toggles try the thumbnail sidebar, dark chrome, `debug`
-diagnostics and each fit mode. Dropping a `.pptx`, `.docx` or `.pdf` onto the stage
+<http://localhost:5273> and press **Load sample deck**, **Load sample .docx**,
+**Load sample .pdf**, **Load sample .xlsx** or **Load sample .tiff**; the toggles
+try the thumbnail sidebar, dark chrome, `debug` diagnostics and each fit mode. Dropping a `.pptx`, `.docx`, `.xlsx`, `.pdf`, an image or a text file onto the stage
 loads your own file.
 
 Note: developing the demo requires Node 20.19+ or 22.12+ (a Vite requirement).

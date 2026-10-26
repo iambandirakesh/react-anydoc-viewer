@@ -67,7 +67,7 @@ export interface ViewerLabels {
 export interface DocumentInfo {
   /** the format that was detected from the bytes */
   format: DocumentFormat;
-  /** number of pages: slides for .pptx, pages for .docx and .pdf */
+  /** number of pages: slides for .pptx, pages for .docx/.xlsx/.pdf/images/text */
   slideCount: number;
   /** slide width in EMU (914400 EMU = 1 inch) */
   widthEmu: number;
@@ -110,7 +110,7 @@ export interface DocumentViewerHandle {
 }
 
 export interface DocumentViewerProps {
-  /** the document to display: .pptx, .docx or .pdf */
+  /** the document to display: .pptx, .docx, .xlsx, .pdf, an image, a table or text */
   source?: DocumentSource | null;
   /** alias of `source`, matching the common `file="..."` usage */
   file?: DocumentSource | null;
