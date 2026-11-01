@@ -68,6 +68,12 @@ function formatNumber(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, "");
 }
 
+const exactNumber = new Intl.NumberFormat("en-US", { maximumFractionDigits: 20 });
+
+function pointDetails(series: ChartSeries, category: string | number | undefined, value: number): string {
+  return [category, series.name, exactNumber.format(value)].filter((part) => part !== null && part !== undefined && part !== "").join(" · ");
+}
+
 function seriesColor(series: ChartSeries, index: number, palette: string[]): string {
   if (series.color) return rgbaToCss(series.color);
   return palette[index % palette.length] ?? "#4472C4";
@@ -130,11 +136,14 @@ export function renderChart(node: ChartNode, options: ChartRenderOptions = {}): 
       ? Math.min(Math.max(20 + Math.min(longestLabel, 26) * 5.4, 52), 180)
       : 52;
   const axisBottom = simplified ? 8 : 28;
+  const axisRight = horizontalBars && chart.showValueLabels && !simplified
+    ? Math.max(16, Math.max(0, ...numericValues(chart).map((value) => exactNumber.format(value).length)) * 5.4 + 8)
+    : 16;
 
   const plot: PlotBox = {
     x: axisLeft,
     y: titleBand,
-    width: Math.max(width - axisLeft - 16, 10),
+    width: Math.max(width - axisLeft - axisRight, 10),
     height: Math.max(height - titleBand - axisBottom - legendBand, 10),
   };
 
@@ -273,6 +282,16 @@ function cartesianNodes(
   const categoryBand = (horizontal ? plot.height : plot.width) / categoryCount;
   const seriesCount = stacked ? 1 : Math.max(chart.series.length, 1);
   const barThickness = Math.max((categoryBand * 0.72) / seriesCount, 1);
+  const visibleSeries = categories.map((_, index) => chart.series.flatMap((series, seriesIndex) => {
+    const value = series.values[index];
+    return typeof value === "number" && Number.isFinite(value) && value !== 0 ? [seriesIndex] : [];
+  }));
+  const barOffset = (index: number, seriesIndex: number): number => {
+    if (stacked) return 0;
+    const active = visibleSeries[index] ?? [];
+    const position = active.indexOf(seriesIndex);
+    return position < 0 ? 0 : (position - (active.length - 1) / 2) * barThickness;
+  };
 
   categoryCount > 0 && nodes.push(
     <g key="cat-labels">
@@ -297,15 +316,15 @@ function cartesianNodes(
 
   chart.series.forEach((series, seriesIndex) => {
     const color = seriesColor(series, seriesIndex, palette);
-    const points: [number, number][] = [];
+    const points: [number, number, number][] = [];
     series.values.forEach((value, index) => {
       if (typeof value !== "number" || !Number.isFinite(value)) return;
       const base = (horizontal ? plot.y : plot.x) + categoryBand * (index + 0.5);
       const offset = (seriesIndex - (seriesCount - 1) / 2) * barThickness;
       if (horizontal) {
-        points.push([scaleX(value), base + offset]);
+        points.push([scaleX(value), base + offset, index]);
       } else {
-        points.push([base + offset, scaleY(value)]);
+        points.push([base + offset, scaleY(value), index]);
       }
     });
 
@@ -318,7 +337,7 @@ function cartesianNodes(
             // draws nothing at all for a zero value.
             if (value === 0) return null;
             const base = (horizontal ? plot.y : plot.x) + categoryBand * (index + 0.5);
-            const offset = stacked ? 0 : (seriesIndex - (seriesCount - 1) / 2) * barThickness;
+            const offset = barOffset(index, seriesIndex);
             const [start, end] = ranges[seriesIndex]?.[index] ?? [0, value];
             if (horizontal) {
               const x = scaleX(Math.min(start, end));
@@ -327,11 +346,13 @@ function cartesianNodes(
                 <rect
                   key={index}
                   x={x}
-                  y={base + offset - barThickness / 2}
+                  y={base + offset - Math.max(barThickness - 1, 0.5) / 2}
                   width={Math.max(width2, 0.5)}
                   height={Math.max(barThickness - 1, 0.5)}
                   fill={pointColor(series, index, seriesIndex, palette)}
-                />
+                >
+                  <title>{pointDetails(series, categories[index], value)}</title>
+                </rect>
               );
             }
             const y = scaleY(Math.max(start, end));
@@ -339,30 +360,34 @@ function cartesianNodes(
             return (
               <rect
                 key={index}
-                x={base + offset - barThickness / 2}
+                x={base + offset - Math.max(barThickness - 1, 0.5) / 2}
                 y={y}
                 width={Math.max(barThickness - 1, 0.5)}
                 height={Math.max(barHeight, 0.5)}
                 fill={pointColor(series, index, seriesIndex, palette)}
-              />
+              >
+                <title>{pointDetails(series, categories[index], value)}</title>
+              </rect>
             );
           })}
           {chart.showValueLabels && !simplified
             ? series.values.map((value, index) =>
-                typeof value === "number" && Number.isFinite(value) ? (
+                typeof value === "number" && Number.isFinite(value) &&
+                !(value === 0 && chart.series.length > 1 && (visibleSeries[index]?.length ?? 0) > 0) ? (
                   <text
                     key={`label-${index}`}
                     x={horizontal
                       ? stacked ? (scaleX(ranges[seriesIndex]![index]![0]) + scaleX(ranges[seriesIndex]![index]![1])) / 2 : scaleX(value) + 4
-                      : plot.x + categoryBand * (index + 0.5) + (stacked ? 0 : (seriesIndex - (seriesCount - 1) / 2) * barThickness)}
-                    y={horizontal ? plot.y + categoryBand * (index + 0.5) + 3 : stacked
+                      : plot.x + categoryBand * (index + 0.5) + barOffset(index, seriesIndex)}
+                    y={horizontal ? plot.y + categoryBand * (index + 0.5) + barOffset(index, seriesIndex) + 3 : stacked
                       ? (scaleY(ranges[seriesIndex]![index]![0]) + scaleY(ranges[seriesIndex]![index]![1])) / 2 + 3
                       : scaleY(value) - 4}
                     textAnchor={horizontal && !stacked ? "start" : "middle"}
                     fontSize={9}
                     fill={TEXT_COLOR}
                   >
-                    {formatNumber(value)}
+                    {exactNumber.format(value)}
+                    <title>{pointDetails(series, categories[index], value)}</title>
                   </text>
                 ) : null,
               )
@@ -404,8 +429,10 @@ function cartesianNodes(
     if (points.length <= 60) {
       nodes.push(
         <g key={`markers-${seriesIndex}`}>
-          {points.map(([px, py], index) => (
-            <circle key={index} cx={px} cy={py} r={2.5} fill={color} />
+          {points.map(([px, py, index]) => (
+            <circle key={index} cx={px} cy={py} r={2.5} fill={color}>
+              <title>{pointDetails(series, categories[index], series.values[index]!)}</title>
+            </circle>
           ))}
         </g>,
       );
@@ -452,7 +479,9 @@ function scatterNodes(
         {series.values.map((value, pointIndex) => {
           const xValue = xValues[pointIndex];
           if (typeof value !== "number" || typeof xValue !== "number" || !Number.isFinite(xValue)) return null;
-          return <circle key={pointIndex} cx={sx(xValue)} cy={sy(value)} r={3.5} fill={color} fillOpacity={0.85} />;
+          return <circle key={pointIndex} cx={sx(xValue)} cy={sy(value)} r={3.5} fill={color} fillOpacity={0.85}>
+            <title>{[series.name, `X: ${exactNumber.format(xValue)}`, `Y: ${exactNumber.format(value)}`].filter(Boolean).join(" · ")}</title>
+          </circle>;
         })}
       </g>,
     );
@@ -497,7 +526,7 @@ function wrapLabel(text: string, maxChars: number): string[] {
 /** The text printed inside a pie or doughnut slice, matching the chart's own labels. */
 function sliceLabel(value: number, total: number, chart: ChartData): string | null {
   if (chart.showPercent) return `${((value / total) * 100).toFixed(1)}%`;
-  if (chart.showValueLabels) return formatNumber(value);
+  if (chart.showValueLabels) return exactNumber.format(value);
   return null;
 }
 
@@ -556,7 +585,11 @@ function pieNodes(
     } else {
       d = `M${cx},${cy}L${x1},${y1}A${radius},${radius} 0 ${largeArc} 1 ${x2},${y2}Z`;
     }
-    nodes.push(<path key={index} d={d} fill={color} stroke="#FFFFFF" strokeWidth={1} />);
+    nodes.push(
+      <path key={index} d={d} fill={color} stroke="#FFFFFF" strokeWidth={1}>
+        <title>{`${pointDetails(series, categories[index], value)} · ${((value / total) * 100).toFixed(1)}%`}</title>
+      </path>,
+    );
 
     const label = sliceLabel(value, total, chart);
     if (!simplified && label) {

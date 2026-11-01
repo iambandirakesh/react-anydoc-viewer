@@ -18,6 +18,44 @@ function view(shapes: string, extra: Partial<Parameters<typeof buildPptx>[0]> = 
   return { parsed, ...result };
 }
 
+it.each(["col", "bar"] as const)("shows exact %s data labels and category/series hover details", (barDir) => {
+  const chart = chartXml({ barDir, showValueLabels: true, series: [{ name: "Week ending May 21", categories: ["Cereal", "Cosmetics"], values: [1780539, 793518.25] }] });
+  const { container } = view(chartFrame({ rId: "rId2" }), { charts: { "ppt/charts/chart1.xml": chart } });
+  const labels = [...container.querySelectorAll("[data-chart-series] text")].map((node) => node.firstChild?.textContent);
+  expect(labels).toEqual(["1,780,539", "793,518.25"]);
+  const details = [...container.querySelectorAll("[data-chart-series] rect title")].map((node) => node.textContent);
+  expect(details).toEqual(["Cereal · Week ending May 21 · 1,780,539", "Cosmetics · Week ending May 21 · 793,518.25"]);
+});
+
+it("keeps pie percentage labels and provides exact values on hover", () => {
+  const chart = chartXml({ type: "pieChart", showPercent: true, series: [{ name: "Revenue", categories: ["Cereal", "Cosmetics"], values: [1780539, 793518] }] });
+  const { container } = view(chartFrame({ rId: "rId2" }), { charts: { "ppt/charts/chart1.xml": chart } });
+  expect(container.querySelector("svg[role='img'] path title")?.textContent).toBe("Cereal · Revenue · 1,780,539 · 69.2%");
+  expect([...container.querySelectorAll("svg[role='img'] text")].some((node) => node.textContent === "69.2%")).toBe(true);
+});
+
+it.each(["col", "bar"] as const)("centers sparse %s clusters on their category and keeps populated clusters paired", (barDir) => {
+  const chart = chartXml({ barDir, showValueLabels: true, series: [
+    { name: "Current", categories: ["Cosmetics", "Cereal", "Both"], values: [793518, 0, 10] },
+    { name: "Prior", categories: ["Cosmetics", "Cereal", "Both"], values: [0, 1780539, 20] },
+  ] });
+  const { container } = view(chartFrame({ rId: "rId2" }), { charts: { "ppt/charts/chart1.xml": chart } });
+  const category = (name: string) => [...container.querySelectorAll("svg[role='img'] text")].find((node) => node.textContent === name)!;
+  const series = container.querySelectorAll("[data-chart-series]");
+  const current = series[0]!.querySelectorAll("rect");
+  const prior = series[1]!.querySelectorAll("rect");
+  const center = (rect: Element) => Number(rect.getAttribute(barDir === "col" ? "x" : "y")) + Number(rect.getAttribute(barDir === "col" ? "width" : "height")) / 2;
+  // Horizontal category text has a three-pixel baseline offset.
+  const axisCenter = (name: string) => Number(category(name).getAttribute(barDir === "col" ? "x" : "y")) - (barDir === "bar" ? 3 : 0);
+  expect(center(current[0]!)).toBeCloseTo(axisCenter("Cosmetics"), 0);
+  expect(center(prior[0]!)).toBeCloseTo(axisCenter("Cereal"), 0);
+  expect((center(current[1]!) + center(prior[1]!)) / 2).toBeCloseTo(axisCenter("Both"), 0);
+  expect(center(current[1]!)).toBeLessThan(center(prior[1]!));
+  const label = series[0]!.querySelector("text")!;
+  const labelCenter = Number(label.getAttribute(barDir === "col" ? "x" : "y")) - (barDir === "bar" ? 3 : 0);
+  expect(labelCenter).toBeCloseTo(barDir === "col" ? axisCenter("Cosmetics") : center(current[0]!), 0);
+});
+
 it("applies recorded autofit to runs, bullets and paragraph line spacing", () => {
   const shape = sp({ text: paragraph({
     bullet: '<a:buSzPct val="100000"/><a:buChar char="•"/>',

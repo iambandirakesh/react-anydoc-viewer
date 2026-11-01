@@ -226,6 +226,10 @@ function parseShapeElement(
   const ctx = resolver.drawing(part);
   const nvSpPr = child(sp, "nvSpPr");
   const common = readCommonProps(nvSpPr, attr(sp, "id") ?? "0");
+  // Master/layout placeholders describe editable slots, not visible slide content.
+  // Their geometry and styles are collected separately for slide placeholders.
+  // Prompt text (and sample date/slide-number fields) must never be painted.
+  if (options.layer === "inherited" && common.placeholder) return null;
   const spPr = child(sp, "spPr");
   const isTextBox = attrBool(child(nvSpPr, "cNvSpPr"), "txBox") === true;
 
@@ -252,10 +256,6 @@ function parseShapeElement(
     // empty placeholder prompts, which must not be painted over the slide.
     return null;
   }
-  if (options.layer === "inherited" && !visibleText && common.placeholder) {
-    return null;
-  }
-
   const xfrm =
     ownTransform ??
     resolver.placeholderTransform(part, common.placeholder) ??
