@@ -169,3 +169,25 @@ it("supports negative data bars, icon thresholds, and comparison priorities", as
   parsed.dispose();
 
 });
+
+it("omits missing numeric cache points without shifting later values or losing real zeroes", async () => {
+  const { createChartReferenceResolver } = await import("../../src/parser/xlsx/chartReferences");
+  const { child, children, attr } = await import("../../src/parser/xml");
+  const archive = readArchive(buildXlsx({ sheets: [{ name: "Data", rows: [[10], [null], [{ type: "error", value: "#N/A" }], [{ type: "formula", formula: "1+1", value: null }], [0], [20]] }] }));
+  const root = parseXml(`<numRef><f>Data!$A$1:$A$6</f></numRef>`)!;
+  createChartReferenceResolver(archive)(root);
+  const cache = child(root, "numCache");
+  expect(attr(child(cache, "ptCount"), "val")).toBe("6");
+  expect(children(cache, "pt").map((point) => [attr(point, "idx"), child(point, "v")?.text])).toEqual([["0", "10"], ["4", "0"], ["5", "20"]]);
+});
+
+it.each([
+  ["General;[Red]-General", -123.45, "-123.45"],
+  ["[Blue]General", 123.45, "123.45"],
+  ["General;[Red](General)", -12, "-12"],
+  ["General;[Red]-General;General", 0, "0"],
+  ['"General"', 12, "General"],
+])("handles modified General format %s", (code, value, expected) => {
+  const xml = parseXml(`<styleSheet><numFmts><numFmt numFmtId="164" formatCode="${String(code).replace(/"/g, "&quot;")}"/></numFmts><cellXfs><xf numFmtId="164"/></cellXfs></styleSheet>`);
+  expect(formatNumericCell(Number(value), 0, parseStyles(xml), false)).toBe(expected);
+});

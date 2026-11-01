@@ -52,7 +52,7 @@ export function createChartReferenceResolver(archive: Archive): (chart: XmlNode 
             for (let r = firstRow; r <= lastRow; r++) for (let c = firstCol; c <= lastCol; c++) items.push(values.get(`${label(c)}${r}`) ?? "");
             const numeric = item.local === "numRef" && !items.some((value) => typeof value === "string" && value !== "");
             if (!numeric) { item.local = "strRef"; item.name = "c:strRef"; }
-            item.children.push(node(numeric ? "numCache" : "strCache", "", {}, [node("ptCount", "", { val: String(items.length) }), ...items.map((value, index) => node("pt", "", { idx: String(index) }, [node("v", String(value))]))]));
+            item.children.push(node(numeric ? "numCache" : "strCache", "", {}, [node("ptCount", "", { val: String(items.length) }), ...items.flatMap((value, index) => numeric && typeof value !== "number" ? [] : [node("pt", "", { idx: String(index) }, [node("v", String(value))])])]));
           }
         }
       }

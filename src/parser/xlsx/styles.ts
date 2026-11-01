@@ -150,6 +150,9 @@ function formatNumber(value: number, formatCode: string | null, numFmtId: number
   const code = sections?.[value < 0 && sections.length > 1 ? 1 : value === 0 && sections.length > 2 ? 2 : 0] ?? null;
   if (!code) return String(value);
   const pattern = code.replace(/"[^"]*"|\\.|\[[^\]]*\]|_.|\*./g, "");
+  // General with color/sign/locale modifiers is not a literal display string.
+  // Fall back to the saved number rather than printing unsupported modifiers.
+  if (/\bGeneral\b/i.test(pattern)) return String(value);
   if (/[Ee][+-]0|[?#]\s*\/\s*[?#]/.test(pattern) || /\[(?:[<>=])/.test(code)) return String(value);
   const match = /[0#?][0#?,]*(?:\.[0#?]+)?(,*)/.exec(pattern);
   if (!match) return code.toLowerCase() === "general" ? String(value) : code.replace(/"([^"]*)"/g, "$1");
