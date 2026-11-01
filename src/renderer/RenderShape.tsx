@@ -244,13 +244,14 @@ function renderGeometryLayer(
       aria-hidden="true"
     >
       <defs>
-        {paint.defs}
+        {!paint.usesImage ? paint.defs : null}
         {clipId ? (
           <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
             <path d={path.d} fillRule={path.fillRule} />
           </clipPath>
         ) : null}
       </defs>
+      {paint.usesImage ? paint.defs : null}
       <path
         d={path.d}
         fill={path.closed ? paint.fillValue : "none"}
@@ -403,7 +404,7 @@ function renderGroup(node: GroupNode, context: ShapeRenderContext, buildLink: Li
           height: `${innerHeight}px`,
           // Child coordinates are in the group's child space; map them into the
           // group's own box before the parent transform is applied.
-          transform: `translate(${-emuToPx(node.chOff.x)}px, ${-emuToPx(node.chOff.y)}px) scale(${scaleX}, ${scaleY})`,
+          transform: `scale(${scaleX}, ${scaleY}) translate(${-emuToPx(node.chOff.x)}px, ${-emuToPx(node.chOff.y)}px)`,
           transformOrigin: "0 0",
         }}
       >

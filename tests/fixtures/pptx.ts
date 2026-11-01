@@ -477,6 +477,8 @@ export interface ChartSeriesSpec {
   categories: string[];
   values: (number | "")[];
   color?: string;
+  /** per-point colours, as PowerPoint writes them for a coloured column chart */
+  pointColors?: (string | null)[];
 }
 
 export function chartXml(options: {
@@ -486,12 +488,32 @@ export function chartXml(options: {
   barDir?: "col" | "bar";
   showLegend?: boolean;
   showValueLabels?: boolean;
+  /** label each point with its share of the series total (`<c:showPercent>`) */
+  showPercent?: boolean;
+  /**
+   * Store categories the way PowerPoint does for a range that spans more than one
+   * column: `<c:multiLvlStrRef>` wrapping a `<c:multiLvlStrCache>` of `<c:lvl>`.
+   */
+  multiLevelCategories?: boolean;
 }): string {
   const type = options.type ?? "barChart";
   const seriesXml = options.series
     .map((series, index) => {
       const catCount = series.categories.length;
       const valCount = series.values.length;
+      const catPoints = series.categories
+        .map((value, i) => `<c:pt idx="${i}"><c:v>${escapeXml(value)}</c:v></c:pt>`)
+        .join("");
+      const pointColorsXml = (series.pointColors ?? [])
+        .map((colour, i) =>
+          colour
+            ? `<c:dPt><c:idx val="${i}"/><c:spPr><a:solidFill><a:srgbClr val="${colour}"/></a:solidFill></c:spPr></c:dPt>`
+            : "",
+        )
+        .join("");
+      const categoriesXml = options.multiLevelCategories
+        ? `<c:cat><c:multiLvlStrRef><c:f>Sheet1!$A$2:$A$${catCount + 1}</c:f><c:multiLvlStrCache><c:ptCount val="${catCount}"/><c:lvl>${catPoints}</c:lvl></c:multiLvlStrCache></c:multiLvlStrRef></c:cat>`
+        : `<c:cat><c:strRef><c:f>Sheet1!$A$2:$A$${catCount + 1}</c:f><c:strCache><c:ptCount val="${catCount}"/>${catPoints}</c:strCache></c:strRef></c:cat>`;
       return `<c:ser>
       <c:idx val="${index}"/><c:order val="${index}"/>
       <c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${escapeXml(series.name)}</c:v></c:pt></c:strCache></c:strRef></c:tx>
@@ -504,13 +526,12 @@ export function chartXml(options: {
       <c:yVal><c:numRef><c:f>Sheet1!$B$2:$B$${valCount + 1}</c:f><c:numCache><c:ptCount val="${valCount}"/>${series.values
               .map((value, i) => (value === "" ? "" : `<c:pt idx="${i}"><c:v>${value}</c:v></c:pt>`))
               .join("")}</c:numCache></c:numRef></c:yVal>`
-          : `<c:cat><c:strRef><c:f>Sheet1!$A$2:$A$${catCount + 1}</c:f><c:strCache><c:ptCount val="${catCount}"/>${series.categories
-              .map((value, i) => `<c:pt idx="${i}"><c:v>${escapeXml(value)}</c:v></c:pt>`)
-              .join("")}</c:strCache></c:strRef></c:cat>
+          : `${categoriesXml}
       <c:val><c:numRef><c:f>Sheet1!$B$2:$B$${valCount + 1}</c:f><c:numCache><c:ptCount val="${valCount}"/>${series.values
               .map((value, i) => (value === "" ? "" : `<c:pt idx="${i}"><c:v>${value}</c:v></c:pt>`))
               .join("")}</c:numCache></c:numRef></c:val>`
       }
+      ${pointColorsXml}
     </c:ser>`;
     })
     .join("");
@@ -522,7 +543,12 @@ export function chartXml(options: {
         ? '<c:grouping val="standard"/><c:varyColors val="0"/><c:marker val="1"/>'
         : '<c:varyColors val="1"/>';
 
-  const labels = options.showValueLabels ? "<c:dLbls><c:showVal val=\"1\"/></c:dLbls>" : "";
+  const labels =
+    options.showValueLabels || options.showPercent
+      ? `<c:dLbls><c:showVal val="${options.showValueLabels ? 1 : 0}"/><c:showPercent val="${
+          options.showPercent ? 1 : 0
+        }"/></c:dLbls>`
+      : "";
 
   const axes =
     type === "pieChart" || type === "doughnutChart"

@@ -284,6 +284,77 @@ describe("presentation parsing", () => {
     }
   });
 
+  it("reads the multi-level category caches PowerPoint writes for wide ranges", () => {
+    const bytes = buildPptx({
+      slides: [
+        {
+          part: "ppt/slides/slide1.xml",
+          shapes: chartFrame({ rId: "rId2", cx: inch(6), cy: inch(3) }),
+          rels: { rId2: { target: "../charts/chart1.xml", type: `${NS.r}/chart` } },
+        },
+      ],
+      charts: {
+        "ppt/charts/chart1.xml": chartXml({
+          type: "barChart",
+          multiLevelCategories: true,
+          series: [
+            { name: "May 28", categories: ["Cosmetics", "Cereal"], values: [793518, 0] },
+            { name: "May 21", categories: ["Cosmetics", "Cereal"], values: [0, 1780539] },
+          ],
+        }),
+      },
+    });
+
+    const chart = parsePresentationBytes(bytes).model.slides[0]!.shapes.find(
+      (shape) => shape.kind === "chart",
+    );
+    expect(chart?.kind).toBe("chart");
+    if (chart?.kind !== "chart") return;
+
+    // An empty category list used to collapse every bar into one band.
+    expect(chart.chart.categories).toEqual(["Cosmetics", "Cereal"]);
+    expect(chart.chart.series.map((series) => series.values)).toEqual([
+      [793518, 0],
+      [0, 1780539],
+    ]);
+  });
+
+  it("reads per-point colours and percentage labels", () => {
+    const bytes = buildPptx({
+      slides: [
+        {
+          part: "ppt/slides/slide1.xml",
+          shapes: chartFrame({ rId: "rId2", cx: inch(6), cy: inch(3) }),
+          rels: { rId2: { target: "../charts/chart1.xml", type: `${NS.r}/chart` } },
+        },
+      ],
+      charts: {
+        "ppt/charts/chart1.xml": chartXml({
+          type: "doughnutChart",
+          showPercent: true,
+          series: [
+            {
+              name: "Share",
+              categories: ["Cosmetics", "The other eight"],
+              values: [70.68, 29.32],
+              pointColors: ["E4A62B", "2B2A5C"],
+            },
+          ],
+        }),
+      },
+    });
+
+    const chart = parsePresentationBytes(bytes).model.slides[0]!.shapes.find(
+      (shape) => shape.kind === "chart",
+    );
+    expect(chart?.kind).toBe("chart");
+    if (chart?.kind !== "chart") return;
+
+    expect(chart.chart.showPercent).toBe(true);
+    expect(chart.chart.series[0]!.pointColors?.[0]).toMatchObject({ r: 0xe4, g: 0xa6, b: 0x2b });
+    expect(chart.chart.series[0]!.pointColors?.[1]).toMatchObject({ r: 0x2b, g: 0x2a, b: 0x5c });
+  });
+
   it("reports effects it cannot draw instead of dropping them silently", () => {
     const bytes = buildPptx({
       slides: [

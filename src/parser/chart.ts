@@ -37,19 +37,8 @@ interface CachedRange {
   numeric: boolean;
 }
 
-/** Read `<c:numCache>`, `<c:strCache>`, `<c:numLit>` or `<c:strLit>`. */
-function readCachedRange(node: XmlNode | null): CachedRange | null {
-  if (!node) return null;
-  const cache =
-    child(node, "numCache") ??
-    child(node, "strCache") ??
-    child(node, "numLit") ??
-    child(node, "strLit") ??
-    // Some producers nest the cache one level deeper (e.g. multi-level categories).
-    find(node, "numCache") ??
-    find(node, "strCache");
-  if (!cache) return null;
-  const numeric = cache.local === "numCache" || cache.local === "numLit";
+/** Read the `<c:pt>` points of one cache element. */
+function readPoints(cache: XmlNode, numeric: boolean): CachedRange | null {
   const count = attrNum(child(cache, "ptCount"), "val") ?? 0;
   const values: (string | number | null)[] = new Array(Math.max(count, 0)).fill(null);
   let maxIndex = -1;
@@ -73,6 +62,35 @@ function readCachedRange(node: XmlNode | null): CachedRange | null {
     return { values: trimmed.map((value) => (typeof value === "number" ? value : Number.NaN)), numeric: true };
   }
   return { values: trimmed.map((value) => (value === null ? "" : String(value))), numeric: false };
+}
+
+/** Read `<c:numCache>`, `<c:strCache>`, `<c:numLit>`, `<c:strLit>` or a multi-level category cache. */
+function readCachedRange(node: XmlNode | null): CachedRange | null {
+  if (!node) return null;
+  const cache =
+    child(node, "numCache") ??
+    child(node, "strCache") ??
+    child(node, "numLit") ??
+    child(node, "strLit") ??
+    // Some producers nest the cache one level deeper.
+    find(node, "numCache") ??
+    find(node, "strCache");
+  if (cache) {
+    return readPoints(cache, cache.local === "numCache" || cache.local === "numLit");
+  }
+
+  // PowerPoint writes categories that reference more than one worksheet column as
+  // a multi-level cache: `<c:multiLvlStrCache>` holding one `<c:lvl>` per level,
+  // innermost first, each repeated for every point. Without this the categories
+  // came back empty, which collapsed every bar into a single band and dropped the
+  // category labels entirely. The view renders one label row, so the innermost
+  // populated level is the one to draw.
+  const multi = child(node, "multiLvlStrCache") ?? find(node, "multiLvlStrCache");
+  if (!multi) return null;
+  const levels = children(multi, "lvl")
+    .map((level) => readPoints(level, false))
+    .filter((range): range is CachedRange => range !== null);
+  return levels.find((range) => range.values.some((value) => value !== "")) ?? levels[0] ?? null;
 }
 
 function readSeriesName(ser: XmlNode, ctx: TextContext): string | null {
@@ -147,7 +165,8 @@ export function parseChart(chartSpace: XmlNode | null, ctx: ChartParseContext): 
   const overlapRaw = attrNum(child(group, "overlap"), "val");
   const gapRaw = attrNum(child(group, "gapWidth"), "val");
   const holeRaw = attrNum(child(group, "holeSize"), "val");
-  const varyColors = attrBool(child(group, "varyColors"), "val") === true;
+  const varyColors = attrBool(child(group, "varyColors"), "val") ??
+    (type === "pieChart" || type === "pie3DChart" || type === "doughnutChart");
 
   const series: ChartSeries[] = [];
   let index = 0;
@@ -163,12 +182,27 @@ export function parseChart(chartSpace: XmlNode | null, ctx: ChartParseContext): 
           ? fill.stops[0].color
           : (ctx.palette[index % Math.max(ctx.palette.length, 1)] ?? null);
 
+    const pointColors: (RGBA | null)[] = [];
+    for (const dPt of children(ser, "dPt")) {
+      const pointIndex = attrNum(child(dPt, "idx"), "val");
+      if (pointIndex === null || pointIndex < 0) continue;
+      const props = child(dPt, "spPr");
+      const pointFill = props ? parseFillFromProps(props, ctx) : null;
+      while (pointColors.length <= pointIndex) pointColors.push(null);
+      pointColors[pointIndex] = pointFill && pointFill.type === "solid" ? pointFill.color : null;
+    }
+
     const catNode = child(ser, "cat") ?? child(ser, "xVal");
     const valNode = child(ser, "val") ?? child(ser, "yVal");
     const categories = readCachedRange(catNode);
     const values = readCachedRange(valNode);
 
     const seriesValues = values ? numericValues(values.values) : [];
+    if (varyColors) {
+      for (let point = 0; point < seriesValues.length; point += 1) {
+        pointColors[point] ??= ctx.palette[point % Math.max(ctx.palette.length, 1)] ?? null;
+      }
+    }
     const seriesCategories = categories
       ? categories.numeric
         ? numericValues(categories.values).map((v) => v ?? "")
@@ -185,6 +219,7 @@ export function parseChart(chartSpace: XmlNode | null, ctx: ChartParseContext): 
       color,
       fill,
       line,
+      pointColors: pointColors.length > 0 ? pointColors : null,
     });
     index += 1;
   }
@@ -199,8 +234,13 @@ export function parseChart(chartSpace: XmlNode | null, ctx: ChartParseContext): 
 
   const plots = children(plotArea, "dLbls");
   const groupLabels = child(group, "dLbls");
-  const showValueLabels =
-    attrBool(child(groupLabels ?? plots[0] ?? null, "showVal"), "val") === true;
+  // PowerPoint also writes label settings on the series (and even on single
+  // points), so falling back to the first series keeps `showVal`/`showPercent`.
+  const firstSeries = children(group, "ser")[0];
+  const seriesLabels = firstSeries ? child(firstSeries, "dLbls") : null;
+  const labelSource = groupLabels ?? seriesLabels ?? plots[0] ?? null;
+  const showValueLabels = attrBool(child(labelSource, "showVal"), "val") === true;
+  const showPercent = attrBool(child(labelSource, "showPercent"), "val") === true;
 
   const valueAxis = child(plotArea, "valAx");
   const categoryAxis = child(plotArea, "catAx") ?? child(plotArea, "dateAx");
@@ -222,6 +262,7 @@ export function parseChart(chartSpace: XmlNode | null, ctx: ChartParseContext): 
     // 50% default is applied per chart type rather than to every pie-like chart.
     holeSize: isDoughnut ? (holeRaw === null ? 50 : clamp(holeRaw, 0, 90)) : 0,
     showValueLabels,
+    showPercent,
     valueAxisTitle: readTitle(child(valueAxis, "title"), ctx.textContext),
     categoryAxisTitle: readTitle(child(categoryAxis, "title"), ctx.textContext),
     style,

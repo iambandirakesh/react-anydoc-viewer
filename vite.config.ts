@@ -1,12 +1,19 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
+const { version } = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
+  version: string;
+};
 
 export default defineConfig({
   plugins: [react()],
+  // The published `version` export must match the package it ships in, so the
+  // number is replaced at build time instead of being written down twice.
+  define: { __RADV_VERSION__: JSON.stringify(version) },
   build: {
     target: "es2019",
     // Source maps are shipped so consumers can debug the (minified) output.

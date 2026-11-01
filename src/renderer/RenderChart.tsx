@@ -73,6 +73,22 @@ function seriesColor(series: ChartSeries, index: number, palette: string[]): str
   return palette[index % palette.length] ?? "#4472C4";
 }
 
+/**
+ * A point's own `<c:dPt>` colour wins, then the series colour, then the palette.
+ * PowerPoint stores per-bar and per-slice colours this way, so ignoring it painted
+ * a whole column chart in the first series' colour.
+ */
+function pointColor(
+  series: ChartSeries,
+  pointIndex: number,
+  seriesIndex: number,
+  palette: string[],
+): string {
+  const explicit = series.pointColors?.[pointIndex];
+  if (explicit) return rgbaToCss(explicit);
+  return seriesColor(series, seriesIndex, palette);
+}
+
 function numericValues(chart: ChartData): number[] {
   const out: number[] = [];
   for (const series of chart.series) {
@@ -96,9 +112,23 @@ export function renderChart(node: ChartNode, options: ChartRenderOptions = {}): 
 
   if (width <= 0 || height <= 0) return null;
 
-  const titleBand = chart.title ? 26 : 8;
+  // Outside-end value labels need room for their ascent above the tallest bar.
+  const valueLabelBand = !simplified && chart.showValueLabels && chart.type.startsWith("bar") && chart.barDir !== "bar" ? 14 : 0;
+  const titleBand = (chart.title ? 26 : 8) + valueLabelBand;
   const legendBand = chart.showLegend && chart.series.length > 0 && !isPieLike(chart) ? 28 : 0;
-  const axisLeft = simplified ? 8 : 52;
+  // A horizontal bar chart prints its category names in the left gutter, so the
+  // gutter has to fit the longest one instead of clipping "Office Supplies".
+  const horizontalBars = chart.barDir === "bar" && chart.type.startsWith("bar");
+  const categoryLabels = chart.categories.length > 0 ? chart.categories : (chart.series[0]?.categories ?? []);
+  const longestLabel = categoryLabels.reduce<number>(
+    (max, label) => Math.max(max, String(label).length),
+    0,
+  );
+  const axisLeft = simplified
+    ? 8
+    : horizontalBars
+      ? Math.min(Math.max(20 + Math.min(longestLabel, 26) * 5.4, 52), 180)
+      : 52;
   const axisBottom = simplified ? 8 : 28;
 
   const plot: PlotBox = {
@@ -160,7 +190,25 @@ function cartesianNodes(
   simplified: boolean,
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const values = numericValues(chart);
+  const stacked = chart.type.startsWith("bar") && (chart.grouping === "stacked" || chart.grouping === "percentStacked");
+  const percentStacked = stacked && chart.grouping === "percentStacked";
+  const positive: number[] = [];
+  const negative: number[] = [];
+  const totals: number[] = [];
+  if (percentStacked) {
+    for (const series of chart.series) series.values.forEach((value, index) => {
+      if (typeof value === "number" && Number.isFinite(value)) totals[index] = (totals[index] ?? 0) + Math.abs(value);
+    });
+  }
+  const ranges = chart.series.map((series) => series.values.map((value, index): [number, number] | null => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    const amount = percentStacked ? (totals[index] ? value / totals[index]! * 100 : 0) : value;
+    const accumulated = amount < 0 ? negative : positive;
+    const start = stacked ? accumulated[index] ?? 0 : 0;
+    accumulated[index] = start + amount;
+    return [start, start + amount];
+  }));
+  const values = stacked ? ranges.flatMap((series) => series.flatMap((range) => range ?? [])) : numericValues(chart);
   let min = Math.min(0, ...values);
   let max = Math.max(0, ...values);
   if (min === max) {
@@ -213,7 +261,7 @@ function cartesianNodes(
                 fontSize={10}
                 fill={TEXT_COLOR}
               >
-                {formatNumber(tick)}
+                {percentStacked ? `${formatNumber(tick)}%` : formatNumber(tick)}
               </text>
             ) : null}
           </g>
@@ -223,7 +271,7 @@ function cartesianNodes(
   );
 
   const categoryBand = (horizontal ? plot.height : plot.width) / categoryCount;
-  const seriesCount = Math.max(chart.series.length, 1);
+  const seriesCount = stacked ? 1 : Math.max(chart.series.length, 1);
   const barThickness = Math.max((categoryBand * 0.72) / seriesCount, 1);
 
   categoryCount > 0 && nodes.push(
@@ -263,14 +311,18 @@ function cartesianNodes(
 
     if (isBar) {
       nodes.push(
-        <g key={`series-${seriesIndex}`}>
+        <g key={`series-${seriesIndex}`} data-chart-series={seriesIndex}>
           {series.values.map((value, index) => {
             if (typeof value !== "number" || !Number.isFinite(value)) return null;
+            // A zero-length bar is a hairline artefact on the baseline; PowerPoint
+            // draws nothing at all for a zero value.
+            if (value === 0) return null;
             const base = (horizontal ? plot.y : plot.x) + categoryBand * (index + 0.5);
-            const offset = (seriesIndex - (seriesCount - 1) / 2) * barThickness;
+            const offset = stacked ? 0 : (seriesIndex - (seriesCount - 1) / 2) * barThickness;
+            const [start, end] = ranges[seriesIndex]?.[index] ?? [0, value];
             if (horizontal) {
-              const x = scaleX(Math.min(value, 0));
-              const width2 = Math.abs(scaleX(value) - scaleX(0));
+              const x = scaleX(Math.min(start, end));
+              const width2 = Math.abs(scaleX(end) - scaleX(start));
               return (
                 <rect
                   key={index}
@@ -278,12 +330,12 @@ function cartesianNodes(
                   y={base + offset - barThickness / 2}
                   width={Math.max(width2, 0.5)}
                   height={Math.max(barThickness - 1, 0.5)}
-                  fill={color}
+                  fill={pointColor(series, index, seriesIndex, palette)}
                 />
               );
             }
-            const y = scaleY(Math.max(value, 0));
-            const barHeight = Math.abs(scaleY(value) - scaleY(0));
+            const y = scaleY(Math.max(start, end));
+            const barHeight = Math.abs(scaleY(end) - scaleY(start));
             return (
               <rect
                 key={index}
@@ -291,18 +343,22 @@ function cartesianNodes(
                 y={y}
                 width={Math.max(barThickness - 1, 0.5)}
                 height={Math.max(barHeight, 0.5)}
-                fill={color}
+                fill={pointColor(series, index, seriesIndex, palette)}
               />
             );
           })}
           {chart.showValueLabels && !simplified
             ? series.values.map((value, index) =>
-                typeof value === "number" ? (
+                typeof value === "number" && Number.isFinite(value) ? (
                   <text
                     key={`label-${index}`}
-                    x={(horizontal ? scaleX(value) + 4 : (plot.x + categoryBand * (index + 0.5)) + (seriesIndex - (seriesCount - 1) / 2) * barThickness)}
-                    y={horizontal ? plot.y + categoryBand * (index + 0.5) + 3 : scaleY(value) - 4}
-                    textAnchor={horizontal ? "start" : "middle"}
+                    x={horizontal
+                      ? stacked ? (scaleX(ranges[seriesIndex]![index]![0]) + scaleX(ranges[seriesIndex]![index]![1])) / 2 : scaleX(value) + 4
+                      : plot.x + categoryBand * (index + 0.5) + (stacked ? 0 : (seriesIndex - (seriesCount - 1) / 2) * barThickness)}
+                    y={horizontal ? plot.y + categoryBand * (index + 0.5) + 3 : stacked
+                      ? (scaleY(ranges[seriesIndex]![index]![0]) + scaleY(ranges[seriesIndex]![index]![1])) / 2 + 3
+                      : scaleY(value) - 4}
+                    textAnchor={horizontal && !stacked ? "start" : "middle"}
                     fontSize={9}
                     fill={TEXT_COLOR}
                   >
@@ -421,6 +477,30 @@ function scatterNodes(
   return nodes;
 }
 
+/** Split a legend label into lines that fit `maxChars`, preferring word breaks. */
+function wrapLabel(text: string, maxChars: number): string[] {
+  const lines: string[] = [];
+  let current = "";
+  for (const word of text.split(/\s+/)) {
+    const candidate = current.length === 0 ? word : `${current} ${word}`;
+    if (current.length === 0 || candidate.length <= maxChars) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current.length > 0) lines.push(current);
+  return lines.length > 0 ? lines.slice(0, 3) : [text.slice(0, maxChars)];
+}
+
+/** The text printed inside a pie or doughnut slice, matching the chart's own labels. */
+function sliceLabel(value: number, total: number, chart: ChartData): string | null {
+  if (chart.showPercent) return `${((value / total) * 100).toFixed(1)}%`;
+  if (chart.showValueLabels) return formatNumber(value);
+  return null;
+}
+
 function pieNodes(
   chart: ChartData,
   plot: PlotBox,
@@ -433,19 +513,34 @@ function pieNodes(
   const total = values.reduce((sum, value) => sum + value, 0);
   if (total <= 0) return [];
 
-  const legendRight = chart.showLegend && !simplified ? 110 : 0;
-  const radius = Math.max(Math.min(plot.width - legendRight, plot.height) / 2 - 6, 4);
-  const cx = plot.x + (plot.width - legendRight) / 2;
+  const categories = series.categories ?? chart.categories;
+  const legendWidth =
+    chart.showLegend && !simplified ? Math.min(Math.max(plot.width * 0.42, 96), 260) : 0;
+  const radius = Math.max(Math.min(plot.width - legendWidth, plot.height) / 2 - 6, 4);
+  const cx = plot.x + (plot.width - legendWidth) / 2;
   const cy = plot.y + plot.height / 2;
   const hole = Math.max((chart.holeSize / 100) * radius, 0);
   const nodes: ReactNode[] = [];
-  const categories = series.categories ?? chart.categories;
+  const maxChars = Math.max(8, Math.floor((legendWidth - 24) / 5.4));
+  const legendLabels =
+    chart.showLegend && !simplified
+      ? values.map((_, index) => {
+          const name = String(categories[index] ?? series.name ?? index + 1);
+          return wrapLabel(name, maxChars);
+        })
+      : [];
+  const legendTops: number[] = [];
+  let legendCursor = plot.y + 2;
+  for (const lines of legendLabels) {
+    legendTops.push(legendCursor);
+    legendCursor += lines.length * 12 + 4;
+  }
 
   let angle = -Math.PI / 2;
   values.forEach((value, index) => {
     const slice = (value / total) * Math.PI * 2;
     const end = angle + slice;
-    const color = palette[index % palette.length] ?? "#4472C4";
+    const color = pointColor(series, index, 0, palette);
     const largeArc = slice > Math.PI ? 1 : 0;
     const x1 = cx + radius * Math.cos(angle);
     const y1 = cy + radius * Math.sin(angle);
@@ -463,33 +558,50 @@ function pieNodes(
     }
     nodes.push(<path key={index} d={d} fill={color} stroke="#FFFFFF" strokeWidth={1} />);
 
-    if (!simplified && chart.showValueLabels) {
+    const label = sliceLabel(value, total, chart);
+    if (!simplified && label) {
       const mid = angle + slice / 2;
+      const labelRadius = hole > 0 ? (radius + hole) / 2 : radius * 0.62;
       nodes.push(
         <text
           key={`label-${index}`}
-          x={cx + (radius * 0.62) * Math.cos(mid)}
-          y={cy + (radius * 0.62) * Math.sin(mid)}
+          x={cx + labelRadius * Math.cos(mid)}
+          y={cy + labelRadius * Math.sin(mid)}
           textAnchor="middle"
-          fontSize={10}
+          dominantBaseline="middle"
+          fontSize={Math.min(Math.max(radius * 0.12, 8), 14)}
+          fontWeight={600}
           fill="#FFFFFF"
         >
-          {`${Math.round((value / total) * 100)}%`}
+          {label}
         </text>,
       );
     }
-    if (!simplified && chart.showLegend) {
-      const label = categories[index];
-      nodes.push(
-        <g key={`legend-${index}`}>
-          <rect x={plot.x + (plot.width - legendRight) + 8} y={plot.y + index * 16 + 4} width={10} height={10} fill={color} />
-          <text x={plot.x + (plot.width - legendRight) + 22} y={plot.y + index * 16 + 13} fontSize={10} fill={TEXT_COLOR}>
-            {String(label ?? series.name ?? index + 1).slice(0, 14)}
-          </text>
-        </g>,
-      );
-    }
     angle = end;
+  });
+
+  // Match each slice to its category using the legend's color swatch.
+  legendLabels.forEach((lines, index) => {
+    const top = legendTops[index] ?? plot.y;
+    nodes.push(
+      <g key={`legend-${index}`}>
+        <rect
+          x={plot.x + (plot.width - legendWidth) + 4}
+          y={top}
+          width={10}
+          height={10}
+          fill={pointColor(series, index, 0, palette)}
+        />
+        <text x={plot.x + (plot.width - legendWidth) + 18} y={top + 9} fontSize={10} fill={TEXT_COLOR}>
+          {lines.map((line, lineIndex) => (
+            <tspan key={lineIndex} x={plot.x + (plot.width - legendWidth) + 18} dy={lineIndex === 0 ? 0 : 12}>
+              {/* keep the word break in the accessible text; a trailing space is invisible */}
+              {lineIndex === lines.length - 1 ? line : `${line} `}
+            </tspan>
+          ))}
+        </text>
+      </g>,
+    );
   });
 
   return nodes;

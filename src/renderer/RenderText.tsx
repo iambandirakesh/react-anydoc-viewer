@@ -74,6 +74,7 @@ interface ParagraphContext {
   /** 1-based index within the current numbered-list run */
   number: number;
   baseSize: number;
+  firstRun?: Run;
 }
 
 function renderBullet(
@@ -101,7 +102,7 @@ function renderBullet(
   const size =
     (bulletSpec.sizePts !== undefined
       ? bulletSpec.sizePts * (96 / 72)
-      : ctx.baseSize * ((bulletSpec.sizePct ?? 100) / 100)) * (options.fontScale ?? 1);
+      : (ctx.firstRun?.props.size ?? ctx.baseSize) * (bulletSpec.sizePct ?? 1)) * (options.fontScale ?? 1);
 
   const style: CSSProperties = {
     position: "absolute",
@@ -111,8 +112,8 @@ function renderBullet(
     transform: hang < 0 ? "translateX(-100%)" : undefined,
     textAlign: hang < 0 ? "right" : "left",
     fontSize: `${size}px`,
-    fontFamily: fontStack(bulletSpec.font),
-    color: cssColor(bulletSpec.color),
+    fontFamily: fontStack(bulletSpec.font ?? ctx.firstRun?.props.font),
+    color: cssColor(bulletSpec.color ?? ctx.firstRun?.props.color),
     whiteSpace: "pre",
     pointerEvents: "none",
   };
@@ -132,19 +133,28 @@ export function renderTextBody(
   buildLink: (href: string, tooltip: string | undefined, children: ReactNode, key: string) => ReactNode,
   options: RenderTextOptions,
 ): TextRenderResult {
+  options = {
+    ...options,
+    fontScale: (options.fontScale ?? 1) * body.autofit.fontScale,
+  };
   const baseSize = baseSizeOf(body);
   const blocks: ReactNode[] = [];
   let numberRun = 0;
 
   body.paragraphs.forEach((paragraph, paragraphIndex) => {
     const props = paragraph.props;
-    const indent = props.indent ?? DEFAULT_INDENT;
 
     const isNumbered = props.bullet?.type === "autoNum";
     if (isNumbered) numberRun += 1;
     else if (props.bullet && props.bullet.type !== "autoNum") numberRun = 0;
 
     const paragraphStyle = paragraphStyleFor(props, body, baseSize);
+    paragraphStyle.fontSize = `${baseSize * (options.fontScale ?? 1)}px`;
+    if (props.lineSpacing?.type === "pt") {
+      paragraphStyle.lineHeight = `${props.lineSpacing.value * (options.fontScale ?? 1) * (1 - body.autofit.lineSpacingReduction)}px`;
+    } else if (body.autofit.lineSpacingReduction > 0) {
+      paragraphStyle.lineHeight = (props.lineSpacing?.value ?? 1.2) * (1 - body.autofit.lineSpacingReduction);
+    }
 
     const runs: ReactNode[] = [];
     paragraph.runs.forEach((run, runIndex) => {
@@ -166,14 +176,12 @@ export function renderTextBody(
       }
     });
 
-    const bullet = props.bullet ? renderBullet(props.bullet, props, { number: numberRun, baseSize }, options) : null;
+    const bullet = props.bullet ? renderBullet(props.bullet, props, { number: numberRun, baseSize, firstRun: paragraph.runs.find((run) => !run.br && run.text.length > 0) }, options) : null;
 
     blocks.push(
       <p key={`p${paragraphIndex}`} style={paragraphStyle} data-paragraph={paragraphIndex}>
         {bullet}
-        <span style={indent.indent !== 0 ? { display: "inline-block", textIndent: `${indent.indent}px` } : undefined}>
-          {runs}
-        </span>
+        <span>{runs}</span>
       </p>,
     );
   });

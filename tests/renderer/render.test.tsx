@@ -186,6 +186,29 @@ describe("slide rendering", () => {
     expect(text).toContain("1.");
   });
 
+  it("renders encoded bullets at text size with aligned continuation lines", () => {
+    const { container } = renderSlide({
+      slides: [{
+        part: "ppt/slides/slide1.xml",
+        shapes: sp({ text: paragraph({
+          marL: inch(0.375), indent: -inch(0.375),
+          bullet: '<a:buSzPct val="100000"/><a:buChar char="&#x2022;"/>',
+          runs: run({ text: "A point long enough to wrap onto another line", size: 1400, color: "2B2B2B" }),
+        }) }),
+      }],
+    });
+    const p = container.querySelector("p")!;
+    const marker = p.firstElementChild as HTMLElement;
+    expect(marker.textContent).toBe("•");
+    expect(parseFloat(marker.style.fontSize)).toBeCloseTo(14 * 96 / 72);
+    expect(marker.style.color).toBe("rgb(43, 43, 43)");
+    expect(marker.style.left).toBe("-36px");
+    expect(p.style.marginLeft).toBe("36px");
+    expect(p.style.textIndent).toBe("");
+    expect((p.lastElementChild as HTMLElement).style.textIndent).toBe("");
+    expect((p.lastElementChild as HTMLElement).style.display).toBe("");
+  });
+
   it("renders tables with cells, fills and merged spans", () => {
     const { container } = renderSlide({
       slides: [
@@ -237,6 +260,124 @@ describe("slide rendering", () => {
     expect(svg?.getAttribute("aria-label")).toBe("Sales");
     expect(container.querySelectorAll("rect").length).toBeGreaterThan(0);
     expect(container.textContent).toContain("Q1");
+  });
+
+  it("paints each point with its own colour", () => {
+    const { container } = renderSlide({
+      slides: [
+        {
+          part: "ppt/slides/slide1.xml",
+          shapes: chartFrame({ rId: "rId2", cx: inch(6), cy: inch(3) }),
+          rels: { rId2: { target: "../charts/chart1.xml", type: `${NS.r}/chart` } },
+        },
+      ],
+      charts: {
+        "ppt/charts/chart1.xml": chartXml({
+          type: "barChart",
+          series: [
+            {
+              name: "Value",
+              categories: ["Cosmetics", "Office Supplies", "Household"],
+              values: [30, 20, 10],
+              pointColors: ["E4A62B", "2B2A5C", null],
+            },
+          ],
+        }),
+      },
+    });
+
+    const fills = [...container.querySelectorAll("svg[role='img'] rect")]
+      .filter((rect) => Number(rect.getAttribute("height")) > 20)
+      .map((rect) => rect.getAttribute("fill"));
+    expect(fills).toHaveLength(3);
+    expect(fills[0]).not.toBe(fills[1]);
+    // A point without a `<c:dPt>` fill falls back to the series colour, which in
+    // turn falls back to the first palette entry.
+    expect(fills[2]).toBe("rgb(68, 114, 196)");
+  });
+
+  it("keeps the tallest column's value label inside the chart viewport", () => {
+    const { container } = renderSlide({
+      slides: [{
+        part: "ppt/slides/slide1.xml",
+        shapes: chartFrame({ rId: "rId2", cx: inch(6), cy: inch(3) }),
+        rels: { rId2: { target: "../charts/chart1.xml", type: `${NS.r}/chart` } },
+      }],
+      charts: { "ppt/charts/chart1.xml": chartXml({
+        type: "barChart", showValueLabels: true,
+        series: [{ name: "Revenue", categories: ["Feb 12", "Feb 19"], values: [6000000, 0] }],
+      }) },
+    });
+    const label = [...container.querySelectorAll('text')].find((node) => node.textContent === "6.0M" && node.getAttribute('text-anchor') === 'middle');
+    expect(label).toBeDefined();
+    expect(Number(label?.getAttribute('y'))).toBeGreaterThanOrEqual(14);
+  });
+
+  it("labels pie slices with their share of the total", () => {
+    const { container } = renderSlide({
+      slides: [
+        {
+          part: "ppt/slides/slide1.xml",
+          shapes: chartFrame({ rId: "rId2", cx: inch(6), cy: inch(3) }),
+          rels: { rId2: { target: "../charts/chart1.xml", type: `${NS.r}/chart` } },
+        },
+      ],
+      charts: {
+        "ppt/charts/chart1.xml": chartXml({
+          type: "doughnutChart",
+          showPercent: true,
+          series: [
+            {
+              name: "Share",
+              categories: ["Cosmetics, Office Supplies & Household", "The other eight categories"],
+              values: [70.68, 29.32],
+              pointColors: ["E4A62B", "2B2A5C"],
+            },
+          ],
+        }),
+      },
+    });
+
+    const text = container.textContent ?? "";
+    const labels = [...container.querySelectorAll('text')].map((node) => node.textContent);
+    expect(labels).toContain("70.7%");
+    expect(labels).toContain("29.3%");
+    expect(text).not.toMatch(/\d+ · /);
+    // The legend carries the full category name, not a truncated stub.
+    expect(text).toContain("Cosmetics, Office Supplies & Household");
+  });
+
+  it("puts each category of a clustered chart in its own band", () => {
+    const { container } = renderSlide({
+      slides: [
+        {
+          part: "ppt/slides/slide1.xml",
+          shapes: chartFrame({ rId: "rId2", cx: inch(6), cy: inch(3) }),
+          rels: { rId2: { target: "../charts/chart1.xml", type: `${NS.r}/chart` } },
+        },
+      ],
+      charts: {
+        "ppt/charts/chart1.xml": chartXml({
+          type: "barChart",
+          multiLevelCategories: true,
+          series: [
+            { name: "May 28", categories: ["Cosmetics", "Cereal"], values: [793518, 0] },
+            { name: "May 21", categories: ["Cosmetics", "Cereal"], values: [0, 1780539] },
+          ],
+        }),
+      },
+    });
+
+    expect(container.textContent).toContain("Cosmetics");
+    expect(container.textContent).toContain("Cereal");
+
+    // Only the two non-zero bars are taller than a legend swatch.
+    const bars = [...container.querySelectorAll("svg[role='img'] rect")].filter(
+      (rect) => Number(rect.getAttribute("height")) > 20,
+    );
+    expect(bars).toHaveLength(2);
+    const [first, second] = bars.map((bar) => Number(bar.getAttribute("x")));
+    expect((second ?? 0) - (first ?? 0)).toBeGreaterThan(20);
   });
 
   it("renders a pie chart with slices", () => {

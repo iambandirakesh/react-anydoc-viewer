@@ -57,19 +57,22 @@ export function renderTable(
   const frameWidth = emuToPx(node.xfrm.cx);
   const frameHeight = emuToPx(node.xfrm.cy);
 
+  // PowerPoint lays a table out from its declared grid and lets the frame grow when
+  // the rows need more room than `ext cy` says. Scaling the rows down to the frame
+  // height squashed them until 11pt cell text overlapped its neighbours.
   const declaredCols = table.colWidths.map(emuToPx);
   const declaredTotal = declaredCols.reduce((sum, value) => sum + value, 0);
   const columns =
-    declaredTotal > 0 && frameWidth > 0
-      ? declaredCols.map((value) => (value * frameWidth) / declaredTotal)
+    declaredTotal > 0
+      ? declaredCols
       : declaredCols.map(() => (declaredCols.length > 0 ? frameWidth / declaredCols.length : 0));
 
   const rows: TableRow[] = table.rows;
   const declaredRowHeights = rows.map((row) => emuToPx(row.height));
   const rowTotal = declaredRowHeights.reduce((sum, value) => sum + value, 0);
   const heights =
-    rowTotal > 0 && frameHeight > 0
-      ? declaredRowHeights.map((value) => (value * frameHeight) / rowTotal)
+    rowTotal > 0
+      ? declaredRowHeights
       : declaredRowHeights.map(() => (rows.length > 0 ? frameHeight / rows.length : 0));
 
   const offsetsX: number[] = [];
@@ -89,10 +92,15 @@ export function renderTable(
   const cells: ReactNode[] = [];
 
   rows.forEach((row, rowIndex) => {
+    // DrawingML retains a tc for each grid position, including merge continuations.
+    // Compact synthetic tables may instead omit those continuation cells.
+    const explicitGrid = row.cells.length === columns.length || row.cells.some((cell) => cell.hMerge || cell.vMerge);
     let columnCursor = 0;
     row.cells.forEach((cell, cellIndex) => {
-      while (columnCursor < columns.length && occupied[rowIndex]?.[columnCursor]) columnCursor += 1;
+      if (explicitGrid) columnCursor = cellIndex;
+      else while (columnCursor < columns.length && occupied[rowIndex]?.[columnCursor]) columnCursor += 1;
       if (columnCursor >= columns.length) return;
+      if (cell.hMerge || cell.vMerge || occupied[rowIndex]?.[columnCursor]) return;
       const colSpan = Math.max(1, Math.min(cell.gridSpan, columns.length - columnCursor));
       const rowSpan = Math.max(1, Math.min(cell.rowSpan, rows.length - rowIndex));
 
@@ -109,12 +117,6 @@ export function renderTable(
       for (let c = columnCursor; c < columnCursor + colSpan; c += 1) width += columns[c] ?? 0;
       let height = 0;
       for (let r = rowIndex; r < rowIndex + rowSpan; r += 1) height += heights[r] ?? 0;
-
-      if (cell.merged && rowSpan === 1 && colSpan === 1 && cell.hMerge) {
-        // Cell skipped by an explicit horizontal merge.
-        columnCursor += colSpan;
-        return;
-      }
 
       const cellStyle: CSSProperties = {
         position: "absolute",

@@ -306,6 +306,8 @@ export interface ChartSeries {
   color: RGBA | null;
   fill: Fill | null;
   line: LineStyle | null;
+  /** per-point colours from `<c:dPt>`, indexed by point; null entries inherit the series */
+  pointColors: (RGBA | null)[] | null;
 }
 
 export interface ChartData {
@@ -324,6 +326,8 @@ export interface ChartData {
   gapWidth: number | null;
   holeSize: number;
   showValueLabels: boolean;
+  /** `<c:showPercent>`: pie slices are labelled with their share of the total */
+  showPercent: boolean;
   valueAxisTitle: string | null;
   categoryAxisTitle: string | null;
   /** 1..48 Office chart style number, when present */
