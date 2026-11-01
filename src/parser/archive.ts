@@ -127,6 +127,7 @@ export const USEFUL_PART: RegExp[] = [
   // SpreadsheetML
   /^xl\/(workbook|styles|sharedstrings)\.xml$/,
   /^xl\/worksheets\//,
+  /^xl\/(theme|drawings|charts|media)\//,
   /^docprops\/core\.xml$/,
 ];
 

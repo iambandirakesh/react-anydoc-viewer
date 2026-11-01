@@ -125,10 +125,10 @@ The viewer fills its parent element, so give the container a height:
 | --- | --- | --- |
 | `.pptx` | Parsed here into a shape model, then drawn with SVG + HTML | Slides, themes, images, tables and charts |
 | `.docx` | Parsed here, paginated in the browser, then drawn with the same shape renderer | A page is a slide as far as the viewer is concerned |
-| `.xlsx` `.xlsm` | Parsed here, then drawn as a read-only grid | Every worksheet becomes a page (hidden sheets included, with a diagnostic); formulas show their cached value and are never evaluated |
+| `.xlsx` `.xlsm` | Parsed here, then drawn as a read-only grid | Worksheets use bottom tabs and a scrollable styled grid, with embedded charts/images; hidden sheets are included with a diagnostic. Formulas use saved results and are never evaluated |
 | `.pdf` | Rasterised page by page by [pdf.js](https://mozilla.github.io/pdf.js/) onto a canvas | The engine every browser PDF viewer uses |
 | `.png` `.jpg` `.jpeg` `.gif` `.webp` `.avif` `.bmp` `.svg` `.tif` `.tiff` | One page, sized from the file's own header | SVG is always an `<img>`, so it can never script your page. TIFF is decoded lazily and drawn on a canvas; multi-page TIFFs become multiple pages |
-| `.csv` `.tsv` | Parsed here, then drawn as a table with a repeated header row | Delimiter detected from the content; a wide table gets a landscape page |
+| `.csv` `.tsv` | A single scrollable worksheet table | Delimiter detected from content; wide tables scroll horizontally and use the worksheet tools |
 | `.txt` `.log` `.json` `.html` `.htm` `.md` | Paginated as monospace text on US-Letter pages | JSON is pretty-printed; Markdown is currently shown as source too, and an HTML file is always shown as **source** — never parsed, never framed, never executed |
 
 **The format is decided from the bytes, never from the file name.** `%PDF-`
@@ -578,26 +578,88 @@ estimated fallback (reported as `docx.layout.estimated`) where no DOM is availab
 
 ## Spreadsheets
 
-An `.xlsx`/`.xlsm` workbook is read with the same ZIP/XML reader as the other
-packages. Each worksheet becomes a page of a read-only grid (hidden sheets are
-shown, with a diagnostic); the sheet list is the page list, so navigation,
-thumbnails, zoom and presentation mode work unchanged. `.xlsx` is detected from `xl/workbook.xml`, and worksheets
-are resolved through the workbook's relationships rather than by file order.
+An `.xlsx`/`.xlsm` workbook opens as a read-only spreadsheet with **worksheet tabs**
+at the bottom. Select a tab to switch sheets; the grid scrolls within the viewer,
+and the bottom zoom controls change its scale. Arrow keys scroll the worksheet;
+when a worksheet tab has focus, Left/Right and Home/End navigate the tabs.
+Spreadsheet files use this layout instead of document thumbnails and page navigation.
+Each worksheet remembers its horizontal and vertical scroll position while the file
+is open. The tools above the grid provide:
+
+- **Search worksheets**: case-insensitive search across sheets, with cell addresses
+  and previous/next navigation (up to 500 matching cells).
+- **Fit width**: scales the used grid and drawings to the current viewer width,
+  subject to the viewer's zoom limits.
+- **Copy selection**: click a cell, drag or Shift-click to select a rectangle, or use
+  Arrow keys and Shift+Arrow to navigate/extend it. Copy with Ctrl/Cmd+C or the button.
+  Values are copied as tab-separated, formatted text; covered merged cells are blank.
+  A green outline marks the selected cells; browser text highlighting is disabled
+  inside the grid. The copy confirmation disappears after two seconds, and copying
+  again restarts that timer.
+- **Download CSV**: exports the current parsed sheet's formatted values, with CSV
+  quoting and a UTF-8 BOM. Text that could be interpreted as a formula is prefixed
+  with an apostrophe. Formatting, drawings and formulas are not exported.
+
+Clipboard access can depend on browser permissions; keyboard copying is available
+when the clipboard button cannot write. Grid cells expose addresses and selection
+state to assistive technology. These controls follow `showControls`/`showToolbar`.
+
+Workbooks use the existing ZIP/XML reader. Detection uses `xl/workbook.xml`, and
+worksheets and drawings are resolved through their relationships rather than file order.
 
 | Supported | Notes |
 | --- | --- |
-| Shared strings, inline strings, numbers, booleans, error values | Shown exactly as stored; nothing is re-interpreted as markup or a formula |
-| Dates and percentages | Resolved from the cell's number format, including the 1904 date system |
-| Formulas | The cached `<v>` result the producer wrote is displayed; a formula with no cache is reported and shown empty. Nothing is ever evaluated |
-| Sparse rows and columns | Cells keep their real coordinates; empty rows are not collapsed |
-| Merged ranges and column widths | Merges become `colspan`/`rowspan`; explicitly sized columns are honoured |
-| Hidden sheets | Shown, because a reader may need the data Excel hides; an info diagnostic names them |
-| `docProps/core.xml` title and author | Exposed on `onLoad` |
+| Shared strings, inline strings, numbers, booleans, error values | Rendered as text; cell contents are never interpreted as HTML |
+| Number formats | Common decimal precision, thousands separators, currency literals, negative/zero sections, percentages, and comma-scaled units |
+| Dates | Common date/date-time formats, including the 1904 date system |
+| Formulas | Displays the saved `<v>` result. Missing results are reported and shown empty; formulas are never recalculated |
+| Cell styles | Fonts, font sizes, emphasis, text colors, solid fills, borders, alignment, wrapping, and theme/indexed colors |
+| Worksheet dimensions | Merged cells, column widths, row heights, hidden rows/columns, sparse cells, and gridline visibility |
+| Long titles | Unwrapped, left-aligned text can extend across empty cells and beyond the used range; occupied cells stop the overflow |
+| Cell spacing | Horizontal and vertical padding improves readability while keeping saved row heights and chart anchors aligned |
+| Conditional formatting | Positive/negative data bars, two-/three-color scales, numeric-constant comparison rules, and common 3-/4-/5-icon sets; thresholds use saved numeric values |
+| Embedded charts | Bar/column, line, area, pie, doughnut, and scatter charts, including supported 3D types rendered in 2D |
+| Chart data | Reads chart caches or direct worksheet range references when caches are absent, including references to other sheets in the workbook |
+| Chart labels | Exact numeric data labels and hover details; crowded category axes show fewer labels without removing data points |
+| Embedded images | Packaged images at one-cell, two-cell, or absolute worksheet drawing anchors; external assets are never fetched |
+| Hidden sheets | Included in the tab list, with an information diagnostic |
+| Workbook metadata | Title and author from `docProps/core.xml` are exposed on `onLoad` |
 
-Reported rather than rendered: charts, pivot tables, conditional formatting,
-comments, images and drawing objects, defined names, macros and error-recovery
-repairs. Very large sheets are capped (50 000 parsed cells, 10 000 rendered cells
-per page) and the cap is reported as a diagnostic instead of freezing the tab.
+Chart layout is approximate. Charts have a small top inset to separate them from
+worksheet headings. Direct range references do not evaluate formulas: referenced
+formula cells still require saved results. External workbook references and defined
+names are not resolved.
+
+Conditional comparison rules support font color/emphasis and solid fills, priority
+ordering, and `stopIfTrue`. Icon sets use accessible symbol approximations, and
+negative data bars use a red negative segment with a proportional zero position.
+
+Not fully supported: formula-based conditional formatting, custom icon appearances,
+extension-based conditional rules, pivot/table styling, rich-text runs within
+cells, gradient/pattern fills, rotated text, comments, advanced drawing objects,
+macros, and workbook repair. Macros in `.xlsm` files are never executed.
+
+To bound rendering work, each sheet is limited to 50,000 parsed cells, 10,000
+rendered cells, 5,000 rows, 200 columns, and 200 drawing anchors. Truncation is
+reported in diagnostics. Conditional formatting is also bounded to 200 groups
+and 200 applied rules per sheet.
+
+## CSV and TSV tables
+
+CSV and other detected delimited tables open as **one scrollable table**, using the
+same grid and tools as XLSX. Rows are not split across document pages, and wide
+columns keep their natural widths with horizontal scrolling, up to a maximum of
+320 CSS pixels. Long cell values wrap inside their columns and rows grow to fit the text. The single **Table**
+tab supports cell search, selection/copy, fit-to-width, and CSV download. The first
+record is styled as the header. Values stay text: leading zeros, date-like values,
+and formula-like strings are not evaluated or reformatted.
+
+Search controls appear only for XLSX/XLSM and CSV/delimited tables. Other document
+formats do not show a search field. CSV search navigates directly to matching cells.
+
+CSV parsing retains at most 20,000 data rows; the displayed grid is capped at
+10,000 cells and 200 columns, with a truncation diagnostic when needed. CSV export
+contains the displayed parsed range, including the header, rather than omitted rows.
 
 ## TIFF images
 
@@ -787,8 +849,8 @@ inside the effect that loads a PDF, so it is never touched during SSR.
   placeholders. TIFF is decoded by the viewer instead (a lazy MIT decoder), so it
   is not limited by what the browser's `<img>` supports.
 - **Spreadsheets**: the grid is read-only. Formulas are shown from the cached value
-  the producer wrote, never recalculated; charts, pivot tables, conditional
-  formatting, comments and macros are not drawn. Very large sheets are capped and
+  the producer wrote, never recalculated; pivot-table styling, complex conditional
+  formatting, comments and macros are not drawn. Chart layout is approximate. Very large sheets are capped and
   the cap is reported in diagnostics.
 - Speaker notes are not parsed or displayed.
 - `mc:AlternateContent` renders the fallback branch, which is the conservative
@@ -848,9 +910,10 @@ The demo app builds every sample in the browser (see
 [examples/demo/src/sampleDocument.ts](examples/demo/src/sampleDocument.ts)), so no
 binary files are committed — including the PDF, which is assembled byte by byte. Open
 <http://localhost:5273> and press **Load sample deck**, **Load sample .docx**,
-**Load sample .pdf**, **Load sample .xlsx** or **Load sample .tiff**; the toggles
+**Load sample .pdf**, **Load sample .xlsx**, **Load XLSX dashboard** or **Load sample .tiff**; the toggles
 try the thumbnail sidebar, dark chrome, `debug` diagnostics and each fit mode. Dropping a `.pptx`, `.docx`, `.xlsx`, `.pdf`, an image or a text file onto the stage
-loads your own file.
+loads your own file. The XLSX dashboard sample includes styled cells, worksheet tabs,
+embedded charts and an image, data bars, and a color scale.
 
 Note: developing the demo requires Node 20.19+ or 22.12+ (a Vite requirement).
 The published package itself only requires Node 18+ for tooling that loads it.

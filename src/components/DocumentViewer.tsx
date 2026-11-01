@@ -14,6 +14,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -34,6 +35,7 @@ import { usePresentation } from "../hooks/usePresentation";
 import { useElementSize } from "../hooks/useElementSize";
 import { useFullscreen } from "../hooks/useFullscreen";
 import { usePresentationMode } from "../hooks/usePresentationMode";
+import { WorksheetTools } from "./WorksheetTools";
 import { SlideCanvas } from "./SlideCanvas";
 import { ThumbnailSidebar } from "./ThumbnailSidebar";
 import { ViewerToolbar } from "./ViewerToolbar";
@@ -110,6 +112,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
   const labels = useMemo(() => mergeLabels(labelOverrides), [labelOverrides]);
   const resolvedSource = source ?? file ?? null;
   const controlsVisible = showToolbar ?? showControls;
+  const worksheetPanelId = useId();
 
   /* ------------------------------------------------------ render issues */
 
@@ -173,6 +176,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
 
   const { model, media, status, error, renderPage } = presentation;
   const slideCount = model?.slides.length ?? 0;
+  const isWorkbook = presentation.format === "xlsx" || presentation.format === "csv";
 
   /* ------------------------------------------------------- navigation */
 
@@ -307,7 +311,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
     slideWidth,
   ]);
 
-  const scale = internalZoom ?? fitScale;
+  const scale = internalZoom ?? (isWorkbook ? 1 : fitScale);
   const onZoomChangeRef = useRef(props.onZoomChange);
   onZoomChangeRef.current = props.onZoomChange;
   const onFitChangeRef = useRef(props.onFitChange);
@@ -334,8 +338,8 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
 
   const resetZoom = useCallback(() => {
     if (controlledZoom === undefined) setInternalZoom(null);
-    onZoomChangeRef.current?.(fitScale);
-  }, [controlledZoom, fitScale]);
+    onZoomChangeRef.current?.(isWorkbook ? 1 : fitScale);
+  }, [controlledZoom, fitScale, isWorkbook]);
 
   const changeFit = useCallback(
     (next: FitMode) => {
@@ -358,6 +362,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (!keyboardNavigation || event.defaultPrevented) return;
+      if (isWorkbook && !["+", "=", "-", "_", "0", "f"].includes(event.key)) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (isEditableTarget(event.target)) return;
       let handled = true;
@@ -402,7 +407,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
       }
       if (handled) event.preventDefault();
     },
-    [fullscreen, goNext, goPrevious, goToSlide, keyboardNavigation, resetZoom, zoomIn, zoomOut],
+    [fullscreen, goNext, goPrevious, goToSlide, keyboardNavigation, resetZoom, zoomIn, zoomOut, isWorkbook],
   );
 
   // A slideshow owns the screen: keys are handled on the document (focus can sit
@@ -419,7 +424,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
         presentationMode.exit();
         return;
       }
-      if (!keyboardNavigation || isEditableTarget(event.target)) return;
+      if (isWorkbook || !keyboardNavigation || isEditableTarget(event.target)) return;
       let handled = true;
       switch (event.key) {
         case "ArrowRight":
@@ -454,17 +459,17 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
 
     document.addEventListener("keydown", onPresentingKeyDown, true);
     return () => document.removeEventListener("keydown", onPresentingKeyDown, true);
-  }, [presenting, keyboardNavigation, goNext, goPrevious, goToSlide, presentationMode]);
+  }, [presenting, keyboardNavigation, goNext, goPrevious, goToSlide, presentationMode, isWorkbook]);
 
   // Clicking the slide advances, the way PowerPoint does; links keep working.
   const onViewerClick = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
-      if (!presenting) return;
+      if (!presenting || isWorkbook) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("a,button")) return;
       goNext();
     },
-    [presenting, goNext],
+    [presenting, goNext, isWorkbook],
   );
 
   /* ------------------------------------------------------------ handle */
@@ -545,7 +550,36 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
         </div>
       );
   } else if (status === "ready" && model && media) {
-    body = (
+    body = isWorkbook && renderPage && currentSlide ? (
+      <div className="radv-workbook" >
+        {controlsVisible && renderPage.worksheetPages && <WorksheetTools key={loadId} pages={renderPage.worksheetPages} index={slideIndex} navigate={goToSlide} root={rootRef} fitWidth={() => {
+          const sheet = renderPage.worksheetPages?.[slideIndex];
+          if (!sheet) return;
+          const width = Math.max(sheet.widths.reduce((a, b) => a + b, 44), ...(sheet.drawings ?? []).map((node) => emuToPx(node.xfrm.x + node.xfrm.cx) + 44));
+          setZoom(Math.max(1, size.width - 2) / Math.max(1, width));
+        }} />}
+
+        <div className="radv-workbook-viewport" ref={containerRef} role="tabpanel" id={worksheetPanelId} aria-label={currentSlide.name ?? undefined}>
+          <div style={{ transform: `scale(${internalZoom ?? 1})`, transformOrigin: "top left" }}>
+            {renderPage({ page: currentSlide, width: Math.max(size.width, 1) / (internalZoom ?? 1), height: Math.max(size.height, 1) / (internalZoom ?? 1), scale: internalZoom ?? 1, interactive: true, media, labels, warn: reportIssue })}
+          </div>
+        </div>
+        <div className="radv-workbook-footer"><div className="radv-sheet-tabs" role="tablist" aria-label="Worksheets">
+          {model.slides.map((sheet, index) => <button type="button" role="tab" key={index} aria-selected={slideIndex === index} aria-controls={worksheetPanelId} tabIndex={slideIndex === index ? 0 : -1} onClick={() => goToSlide(index)} onKeyDown={(event) => {
+            const next = event.key === "ArrowRight" ? (index + 1) % slideCount : event.key === "ArrowLeft" ? (index + slideCount - 1) % slideCount : event.key === "Home" ? 0 : event.key === "End" ? slideCount - 1 : null;
+            if (next === null) return;
+            event.preventDefault(); event.stopPropagation(); goToSlide(next);
+            (event.currentTarget.parentElement?.children[next] as HTMLElement | undefined)?.focus();
+          }}>{sheet.name || `Sheet ${index + 1}`}</button>)}
+        </div>
+        {controlsVisible && <div className="radv-workbook-zoom">
+          <button type="button" aria-label="Zoom out" onClick={zoomOut} disabled={scale <= MIN_ZOOM}>−</button>
+          <button type="button" aria-label="Reset zoom" onClick={resetZoom}>{Math.round(scale * 100)}%</button>
+          <button type="button" aria-label="Zoom in" onClick={zoomIn} disabled={scale >= MAX_ZOOM}>+</button>
+        </div>}
+        </div>
+      </div>
+    ) : (
       <SlideCanvas
         model={model}
         media={media}
@@ -589,7 +623,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
       aria-label={labels.viewerRegion}
     >
       <div className="radv-body">
-        {!presenting && thumbnailsVisible && model && media && status === "ready" ? (
+        {!isWorkbook && !presenting && thumbnailsVisible && model && media && status === "ready" ? (
           <ThumbnailSidebar
             model={model}
             media={media}
@@ -617,7 +651,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
            * stylesheet keeps it out of sight until the viewer is hovered or one of
            * its controls has focus.
            */}
-          {controlsVisible && !presenting ? (
+          {controlsVisible && !presenting && !isWorkbook ? (
             <ViewerToolbar
               labels={labels}
               slideIndex={slideIndex}

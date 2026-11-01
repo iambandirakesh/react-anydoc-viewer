@@ -174,17 +174,17 @@ describe("text documents", () => {
     parsed.dispose();
   });
 
-  it("builds a table page per chunk of rows, repeating the header", () => {
+  it("builds one worksheet for all CSV rows", () => {
     const rows = Array.from({ length: 60 }, (_, i) => `${i},value ${i}`).join("\n");
     const parsed = parsePlainTextDocument(bytes(`id,label\n${rows}\n`));
     expect(parsed.format).toBe("csv");
-    expect(parsed.model.slides.length).toBeGreaterThan(1);
+    expect(parsed.model.slides.length).toBe(1);
     const last = parsed.model.slides.length - 1;
     expect(parsed.model.slides[last]?.index).toBe(last);
     parsed.dispose();
   });
 
-  it("uses a landscape page for a wide table and reports clipping", () => {
+  it("keeps wide tables at their natural widths for scrolling", () => {
     const header = Array.from({ length: 30 }, (_, i) => `column ${i}`).join(",");
     const row = Array.from({ length: 30 }, () => "value").join(",");
     const wide = parsePlainTextDocument(bytes(`${header}\n${row}\n`));
@@ -198,7 +198,7 @@ describe("text documents", () => {
         ).join(",")}\n`,
       ),
     );
-    expect(huge.model.diagnostics.map((diagnostic) => diagnostic.code)).toContain("text.csv.width");
+    expect(huge.model.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("text.csv.width");
     huge.dispose();
   });
 

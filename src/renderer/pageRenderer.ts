@@ -36,4 +36,7 @@ export interface PageRenderContext {
   warn: (code: string, message: string) => void;
 }
 
-export type PageRenderer = (context: PageRenderContext) => ReactNode;
+export interface PageRenderer {
+  (context: PageRenderContext): ReactNode;
+  worksheetPages?: readonly import("../parser/xlsx/model").SheetPageData[];
+}

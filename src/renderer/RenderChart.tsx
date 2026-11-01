@@ -280,6 +280,8 @@ function cartesianNodes(
   );
 
   const categoryBand = (horizontal ? plot.height : plot.width) / categoryCount;
+  const labelWidth = Math.max(0, ...categories.map((label) => Math.min(String(label).length, 18) * 5.8 + 12));
+  const labelStride = horizontal ? 1 : Math.max(1, Math.ceil(labelWidth / categoryBand));
   const seriesCount = stacked ? 1 : Math.max(chart.series.length, 1);
   const barThickness = Math.max((categoryBand * 0.72) / seriesCount, 1);
   const visibleSeries = categories.map((_, index) => chart.series.flatMap((series, seriesIndex) => {
@@ -297,6 +299,7 @@ function cartesianNodes(
     <g key="cat-labels">
       {!simplified &&
         categories.map((label, index) => {
+          if (index % labelStride !== 0) return null;
           const center = (horizontal ? plot.y : plot.x) + categoryBand * (index + 0.5);
           return (
             <text

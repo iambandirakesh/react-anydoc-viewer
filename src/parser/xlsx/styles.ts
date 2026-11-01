@@ -8,13 +8,19 @@
  * the stored value rather than guessed at.
  */
 
-import { children, attrNum, type XmlNode } from "../xml";
+import { children, attrBool, attrNum, type XmlNode } from "../xml";
 
 /** Built-in Excel number-format ids that represent dates or times. */
 const BUILT_IN_DATE_IDS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
 
 /** Built-in id -> format code, for the subset the viewer can interpret. */
 const BUILT_IN_CODES: Record<number, string> = {
+  1: "0",
+  2: "0.00",
+  3: "#,##0",
+  4: "#,##0.00",
+  5: '"$"#,##0',
+  7: '"$"#,##0.00',
   9: "0%",
   10: "0.00%",
   14: "mm-dd-yy",
@@ -51,8 +57,10 @@ export function parseStyles(root: XmlNode | null): WorkbookStyles {
   }
 
   const cellXfs = children(root, "cellXfs")[0] ?? null;
+  const bases = children(children(root, "cellStyleXfs")[0], "xf");
   for (const xf of children(cellXfs, "xf")) {
-    numFmtByStyle.push(attrNum(xf, "numFmtId") ?? 0);
+    const inherited = attrNum(bases[attrNum(xf, "xfId") ?? 0], "numFmtId") ?? 0;
+    numFmtByStyle.push(attrBool(xf, "applyNumberFormat") === false ? inherited : attrNum(xf, "numFmtId") ?? inherited);
   }
   return { numFmtByStyle, formatCodeById };
 }
@@ -137,28 +145,25 @@ function decimalPlaces(formatCode: string): number {
 
 function formatNumber(value: number, formatCode: string | null, numFmtId: number | null): string {
   if (!Number.isFinite(value)) return "";
-  const code = formatCode ?? (numFmtId !== null ? BUILT_IN_CODES[numFmtId] ?? null : null);
+  const fullCode = formatCode ?? (numFmtId !== null ? BUILT_IN_CODES[numFmtId] ?? null : null);
+  const sections = fullCode?.split(/;(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+  const code = sections?.[value < 0 && sections.length > 1 ? 1 : value === 0 && sections.length > 2 ? 2 : 0] ?? null;
   if (!code) return String(value);
-
-  if (code.includes("%") || numFmtId === 9 || numFmtId === 10) {
-    const decimals = decimalPlaces(code);
-    return `${(value * 100).toFixed(decimals)}%`;
-  }
-
-  const decimals = decimalPlaces(code);
-  if (decimals > 0) {
-    const fixed = value.toFixed(decimals);
-    // A thousands separator is a display choice in the format code, not in the
-    // value. Only apply it when the code asks for one.
-    if (code.includes(",")) {
-      const [integer, fraction] = fixed.split(".");
-      const grouped = (integer ?? "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-      return fraction === undefined ? grouped : `${grouped}.${fraction}`;
-    }
-    return fixed;
-  }
-
-  return String(value);
+  const pattern = code.replace(/"[^"]*"|\\.|\[[^\]]*\]|_.|\*./g, "");
+  if (/[Ee][+-]0|[?#]\s*\/\s*[?#]/.test(pattern) || /\[(?:[<>=])/.test(code)) return String(value);
+  const match = /[0#?][0#?,]*(?:\.[0#?]+)?(,*)/.exec(pattern);
+  if (!match) return code.toLowerCase() === "general" ? String(value) : code.replace(/"([^"]*)"/g, "$1");
+  const percent = pattern.includes("%");
+  const decimals = Math.min(decimalPlaces(match[0]), 20);
+  const scale = 1000 ** (/,+$/.exec(match[0])?.[0].length ?? 0);
+  const magnitude = (value < 0 && sections && sections.length > 1 ? Math.abs(value) : value) * (percent ? 100 : 1) / scale;
+  const formatted = new Intl.NumberFormat("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: match[0].replace(/,+$/, "").includes(",") }).format(magnitude);
+  // Keep currency symbols and quoted/escaped display units, never interpret markup.
+  const display = code.replace(/\[\$([^\]-]*)[^\]]*\]/g, "$1").replace(/\[[^\]]*\]|_.|\*./g, "");
+  const numeric = /[0#?][0#?,]*(?:\.[0#?]+)?[,]*/.exec(display.replace(/"[^"]*"/g, (literal) => " ".repeat(literal.length)));
+  if (!numeric || numeric.index === undefined) return formatted + (percent ? "%" : "");
+  const literal = (text: string) => text.replace(/"([^"]*)"/g, "$1").replace(/\\(.)/g, "$1");
+  return literal(display.slice(0, numeric.index)) + formatted + literal(display.slice(numeric.index + numeric[0].length));
 }
 
 /**
