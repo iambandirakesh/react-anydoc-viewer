@@ -166,6 +166,18 @@ describe("slide rendering", () => {
     expect(placeholder?.textContent).toContain("cannot be displayed");
   });
 
+  it.each(["none", "square"] as const)("inherits the text body's %s wrapping policy without losing spaces", (wrap) => {
+    const text = "Long title   with intentional spacing and more words";
+    const shape = sp({ cx: inch(1), text: paragraph({ runs: run({ text, size: 2000 }) }) })
+      .replace("<a:bodyPr/>", `<a:bodyPr wrap="${wrap}"/>`);
+    const { container } = renderSlide({ slides: [{ part: "ppt/slides/slide1.xml", shapes: shape }] });
+    const p = container.querySelector("p")!;
+    const span = container.querySelector<HTMLElement>("[data-run]")!;
+    expect(p.style.whiteSpace).toBe(wrap === "none" ? "pre" : "pre-wrap");
+    expect(span.style.whiteSpace).toBe("inherit");
+    expect(span.textContent).toBe(text);
+  });
+
   it("renders bullets and numbered list markers", () => {
     const { container } = renderSlide({
       slides: [

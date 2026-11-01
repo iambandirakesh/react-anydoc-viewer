@@ -41,9 +41,8 @@ export function runStyleFor(run: Run, baseSize: number, options: TextStyleOption
     fontStyle: props.italic ? "italic" : "normal",
     color: cssColor(props.color),
     letterSpacing: props.spacing ? `${props.spacing}px` : undefined,
-    // PowerPoint keeps every space a run contains; authors pad columns with runs of
-    // spaces ("Clothes   $7.8M") and HTML would collapse them to one.
-    whiteSpace: "pre-wrap",
+    // The paragraph preserves spaces and decides whether wrapping is enabled.
+    whiteSpace: "inherit",
   };
   if (props.underline && props.underline !== "none") {
     style.textDecoration = props.strike && props.strike !== "noStrike" ? "underline line-through" : "underline";
@@ -98,7 +97,8 @@ export function paragraphStyleFor(props: ParaProps, body: TextBody, baseSize: nu
     textIndent: props.bullet && props.bullet.type !== "none" ? undefined : `${indent.indent}px`,
     textAlign,
     lineHeight,
-    whiteSpace: body.wrap === "none" ? "nowrap" : "pre-wrap",
+    // Both policies preserve authored spaces; `pre` also disables soft wrapping.
+    whiteSpace: body.wrap === "none" ? "pre" : "pre-wrap",
     direction: props.rtl ? "rtl" : undefined,
     fontSize: `${baseSize}px`,
     fontFamily: DEFAULT_FONT_STACK,
