@@ -4,7 +4,8 @@
  * The clock is read *in the page*, not in Node: `performance.now()` is stamped by
  * a `change` listener on the file input (the moment the bytes reach the viewer)
  * and again when the viewer reports `data-status="ready"` and when the first page
- * is actually in the DOM. That removes this process's IPC and polling latency
+ * is actually in the DOM. PDF raster completion is measured separately: mounting
+ * a canvas does not mean its contents have been drawn. This removes IPC/polling latency
  * from the number, so it is the time the user waits and not the time a test
  * harness waits.
  *
@@ -15,6 +16,10 @@
 
 import { test, type Page } from "@playwright/test";
 import { unzipSync } from "fflate";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { bigDeck, bigDocx, bigPdf } from "./fixtures";
 
 interface ProfileNode {
@@ -36,6 +41,8 @@ interface Marks {
   ready?: number;
   /** the first page was in the DOM */
   paint?: number;
+  /** pdf.js finished drawing the main page canvas; excludes browser compositing */
+  rasterReady?: number;
   status?: string;
 }
 
@@ -57,7 +64,8 @@ async function arm(page: Page): Promise<void> {
     const check = (): void => {
       // Short-circuit first: once both marks are known this runs for every
       // mutation of the whole document, which is a lot of work to do nothing.
-      if (marks.ready !== undefined && marks.paint !== undefined) return;
+      if (marks.ready !== undefined && marks.paint !== undefined &&
+          (marks.rasterReady !== undefined || !document.querySelector('.radv-canvas-inner canvas'))) return;
       if (marks.change === undefined) return;
       const root = document.querySelector(".radv-root");
       const status = root?.getAttribute("data-status") ?? undefined;
@@ -67,13 +75,16 @@ async function arm(page: Page): Promise<void> {
       if (marks.paint === undefined && document.querySelector(".radv-canvas-inner")) {
         marks.paint = performance.now();
       }
+      if (marks.rasterReady === undefined && document.querySelector('.radv-canvas-inner canvas[data-render-state="ready"]')) {
+        marks.rasterReady = performance.now();
+      }
     };
 
     new MutationObserver(check).observe(document.body, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["data-status"],
+      attributeFilter: ["data-status", "data-render-state"],
     });
 
     const input = document.querySelector('input[type="file"]');
@@ -83,6 +94,7 @@ async function arm(page: Page): Promise<void> {
         marks.change = performance.now();
         marks.ready = undefined;
         marks.paint = undefined;
+        marks.rasterReady = undefined;
         // A frame-by-frame safety net for state that changes without a mutation
         // the observer happens to see.
         const tick = (): void => {
@@ -98,7 +110,7 @@ async function arm(page: Page): Promise<void> {
 
 async function load(page: Page, name: string, mimeType: string, buffer: Buffer): Promise<Marks> {
   await arm(page);
-  await page.locator('input[type="file"]').setInputFiles({ name, mimeType, buffer });
+  await upload(page, name, mimeType, buffer);
   await page.waitForFunction(
     () => {
       const marks = (window as unknown as { __bench: Marks }).__bench;
@@ -107,9 +119,28 @@ async function load(page: Page, name: string, mimeType: string, buffer: Buffer):
     undefined,
     { timeout: 180_000 },
   );
+  if (name.toLowerCase().endsWith(".pdf")) {
+    await page.waitForFunction(() => (window as unknown as { __bench: Marks }).__bench.rasterReady !== undefined, undefined, { timeout: 180_000 });
+  }
   // The paint mark is stamped by an observer; give it a frame to land.
   await page.waitForTimeout(50);
   return page.evaluate(() => (window as unknown as { __bench: Marks }).__bench);
+}
+
+async function upload(page: Page, name: string, mimeType: string, buffer: Buffer): Promise<void> {
+  if (buffer.length <= 50 * 1024 * 1024) {
+    await page.locator('input[type="file"]').setInputFiles({ name, mimeType, buffer });
+    return;
+  }
+  // Playwright's in-memory upload transport has a 50 MiB limit.
+  const directory = await mkdtemp(join(tmpdir(), "anydoc-bench-"));
+  try {
+    const path = join(directory, basename(name));
+    await writeFile(path, buffer);
+    await page.locator('input[type="file"]').setInputFiles(path);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 function median(values: number[]): number {
@@ -133,6 +164,9 @@ interface Case {
  * report. Override with BENCH_SCALE to check how the cost grows.
  */
 function cases(): Case[] {
+  if (process.env.BENCH_FILE) {
+    return [{ name: basename(process.env.BENCH_FILE), mimeType: "application/octet-stream", buffer: readFileSync(process.env.BENCH_FILE) }];
+  }
   const scale = Number(process.env.BENCH_SCALE ?? 1);
   const only = process.env.BENCH_ONLY ?? "";
   // BENCH_MEDIA=heavy puts two pictures on every slide of the deck.
@@ -157,6 +191,28 @@ function cases(): Case[] {
 }
 
 const RUNS = Number(process.env.BENCH_RUNS ?? 3);
+
+test("thumbnail working set after browsing", async ({ page }) => {
+  test.skip(process.env.BENCH_BROWSE !== "1", "set BENCH_BROWSE=1 to measure retained thumbnails");
+  for (const item of cases()) {
+    await page.goto("/");
+    await load(page, item.name, item.mimeType, item.buffer);
+    const footprint = () => page.evaluate(() => ({
+      renderedThumbnails: document.querySelectorAll('.radv-thumb-scale > *').length,
+      nodes: document.querySelectorAll('*').length,
+      canvasPixels: [...document.querySelectorAll('canvas')].reduce((sum, canvas) => sum + canvas.width * canvas.height, 0),
+    }));
+    const before = await footprint();
+    const items = page.locator('.radv-thumb-item');
+    const visited = Math.min(await items.count(), 60);
+    for (let index = 0; index < visited; index += 1) {
+      await items.nth(index).scrollIntoViewIfNeeded();
+      await page.waitForTimeout(30);
+    }
+    await page.waitForTimeout(200);
+    console.log(`WORKING_SET ${item.name} visited=${visited} before=${JSON.stringify(before)} after=${JSON.stringify(await footprint())}`);
+  }
+});
 
 test("median load time per format", async ({ page }) => {
   const fixtures = cases();
@@ -185,6 +241,7 @@ test("median load time per format", async ({ page }) => {
   for (const item of fixtures) {
     const ready: number[] = [];
     const paint: number[] = [];
+    const rasterReady: number[] = [];
     for (let run = 0; run < RUNS; run += 1) {
       await page.goto("/");
       const marks = await load(page, item.name, item.mimeType, item.buffer);
@@ -194,6 +251,7 @@ test("median load time per format", async ({ page }) => {
       }
       ready.push(marks.ready - marks.change);
       if (marks.paint !== undefined) paint.push(marks.paint - marks.change);
+      if (marks.rasterReady !== undefined) rasterReady.push(marks.rasterReady - marks.change);
     }
     // How many pixels were rasterised, across the main page and its thumbnails.
     // For a PDF that is the work pdf.js does, and it is the cost the load time
@@ -212,7 +270,7 @@ test("median load time per format", async ({ page }) => {
     const readyMedian = median(ready);
     const paintMedian = paint.length > 0 ? median(paint) : Number.NaN;
     console.log(
-      `BENCH ${item.name} ready=${readyMedian.toFixed(0)}ms paint=${Number.isNaN(paintMedian) ? "?" : `${paintMedian.toFixed(0)}ms`} runs=[${ready.map((v) => v.toFixed(0)).join(", ")}] raster=${raster.canvases} canvases/${(raster.pixels / 1e6).toFixed(1)} Mpx pages=${raster.pages.split("/").pop()?.trim() ?? "?"}`,
+      `BENCH ${item.name} ready=${readyMedian.toFixed(0)}ms mounted=${Number.isNaN(paintMedian) ? "?" : `${paintMedian.toFixed(0)}ms`} pdfRasterReady=${rasterReady.length ? `${median(rasterReady).toFixed(0)}ms` : "n/a"} runs=[${ready.map((v) => v.toFixed(0)).join(", ")}] raster=${raster.canvases} canvases/${(raster.pixels / 1e6).toFixed(1)} Mpx pages=${raster.pages.split("/").pop()?.trim() ?? "?"}`,
     );
   }
 });
@@ -237,11 +295,7 @@ test("cpu profile hotspots", async ({ page }) => {
     await page.goto("/");
     await arm(page);
     await session.send("Profiler.start");
-    await page.locator('input[type="file"]').setInputFiles({
-      name: item.name,
-      mimeType: item.mimeType,
-      buffer: item.buffer,
-    });
+    await upload(page, item.name, item.mimeType, item.buffer);
     await page.waitForFunction(
       () => {
         const marks = (window as unknown as { __bench: Marks }).__bench;
