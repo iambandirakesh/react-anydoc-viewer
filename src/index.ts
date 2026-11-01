@@ -87,5 +87,8 @@ export type {
   PresentationInfo,
 } from "./types/public";
 
+/** Package version, replaced with `package.json`'s value at build time. */
+declare const __RADV_VERSION__: string;
+
 /** Package version, useful for diagnostics and bug reports. */
-export const version = "0.1.0" as const;
+export const version: string = __RADV_VERSION__;

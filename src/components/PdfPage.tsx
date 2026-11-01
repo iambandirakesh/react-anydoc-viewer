@@ -72,6 +72,7 @@ export function PdfPage({
     if (!canvas) return undefined;
     let cancelled = false;
     let task: { promise: Promise<void>; cancel(): void } | null = null;
+    canvas.dataset.renderState = "rendering";
     setFailed(null);
 
     const run = async () => {
@@ -96,8 +97,10 @@ export function PdfPage({
         if (!context) throw new Error("this browser did not provide a 2D canvas context");
         task = page.render({ canvasContext: context, viewport, canvas });
         await task.promise;
+        if (!cancelled) canvas.dataset.renderState = "ready";
       } catch (error) {
         if (cancelled || isCancellation(error)) return;
+        canvas.dataset.renderState = "error";
         const message = error instanceof Error ? error.message : String(error);
         setFailed(message);
         issueRef.current?.("pdf.page", `Page ${pageIndex + 1} could not be rendered: ${message}`);

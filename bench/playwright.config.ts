@@ -13,7 +13,7 @@ import { defineConfig, devices } from "@playwright/test";
 // BENCH_PORT runs the benchmark against a dev server of its own, which is what a
 // cold-cache measurement needs (see the README's note on first-load dev cost).
 const port = Number(process.env.BENCH_PORT ?? 5273);
-const baseURL = `http://localhost:${port}`;
+const baseURL = process.env.BENCH_BASE_URL ?? `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: ".",

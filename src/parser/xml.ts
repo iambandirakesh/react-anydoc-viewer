@@ -150,7 +150,7 @@ function convert(raw: unknown): XmlNode | null {
   if (typeof rawAttrs === "object" && rawAttrs !== null) {
     for (const [key, value] of Object.entries(rawAttrs as Record<string, unknown>)) {
       if (key === "xmlns" || key.startsWith("xmlns:")) continue;
-      node.attrs[key] = typeof value === "string" ? value : String(value);
+      node.attrs[key] = decodeXmlText(typeof value === "string" ? value : String(value));
     }
   }
 
