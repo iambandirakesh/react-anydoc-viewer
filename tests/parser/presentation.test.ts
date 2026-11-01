@@ -218,6 +218,23 @@ describe("presentation parsing", () => {
     expect(slide.shapes.length).toBeGreaterThan(0);
   });
 
+  it("uses master/layout placeholders for inheritance without painting their editing prompts", () => {
+    const master = sp({ id: 40, ph: "title", x: inch(1), y: inch(0.5), cx: inch(8), cy: inch(1), text: paragraph({ runs: run({ text: "Click to edit Master title style" }) }) });
+    const layout = ["body", "dt", "sldNum", "ftr"].map((ph, index) => sp({ id: 50 + index, ph, text: paragraph({ runs: run({ text: ph === "body" ? "Click to edit Master text styles" : "Sample field" }) }) })).join("");
+    const decoration = sp({ id: 60, text: paragraph({ runs: run({ text: "Company footer" }) }) });
+    const parsed = parsePresentationBytes(buildPptx({
+      masterSpTree: master + decoration,
+      layoutSpTree: layout,
+      slides: [{ part: "ppt/slides/slide1.xml", shapes: sp({ ph: "title", noTransform: true, text: paragraph({ runs: run({ text: "Quarterly Performance" }) }) }) }],
+    }));
+    const slide = parsed.model.slides[0]!;
+    expect(slide.inheritedShapes.map((shape) => shape.id)).toEqual(["60"]);
+    const title = slide.shapes[0]!;
+    expect(title.kind).toBe("shape");
+    expect(title.xfrm.x).toBe(inch(1));
+    if (title.kind === "shape") expect(title.text?.paragraphs[0]?.runs[0]?.text).toBe("Quarterly Performance");
+  });
+
   it("parses tables, merges and charts", () => {
     const bytes = buildPptx({
       slides: [

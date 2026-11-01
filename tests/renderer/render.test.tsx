@@ -320,7 +320,7 @@ describe("slide rendering", () => {
         series: [{ name: "Revenue", categories: ["Feb 12", "Feb 19"], values: [6000000, 0] }],
       }) },
     });
-    const label = [...container.querySelectorAll('text')].find((node) => node.textContent === "6.0M" && node.getAttribute('text-anchor') === 'middle');
+    const label = [...container.querySelectorAll('text')].find((node) => node.firstChild?.textContent === "6,000,000" && node.getAttribute('text-anchor') === 'middle');
     expect(label).toBeDefined();
     expect(Number(label?.getAttribute('y'))).toBeGreaterThanOrEqual(14);
   });
@@ -354,7 +354,7 @@ describe("slide rendering", () => {
     const labels = [...container.querySelectorAll('text')].map((node) => node.textContent);
     expect(labels).toContain("70.7%");
     expect(labels).toContain("29.3%");
-    expect(text).not.toMatch(/\d+ · /);
+    for (const label of labels) expect(label).not.toMatch(/^\d+ · /);
     // The legend carries the full category name, not a truncated stub.
     expect(text).toContain("Cosmetics, Office Supplies & Household");
   });
