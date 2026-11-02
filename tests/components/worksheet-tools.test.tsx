@@ -46,3 +46,16 @@ it("shows search for CSV but not for presentation documents", async () => {
   fireEvent.change(search, { target: { value: "Cosmetics" } });
   await waitFor(() => expect(screen.getByRole("button", { name: "Next search result" })).not.toBeDisabled());
 });
+
+it("keeps worksheet panel IDs unique across viewer instances", async () => {
+  const source = workbook();
+  const { container } = render(<><DocumentViewer source={source} /><DocumentViewer source={source} /></>);
+  await waitFor(() => expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(2));
+  const panels = [...container.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+  expect(panels[0]!.id).toBeTruthy();
+  expect(panels[1]!.id).not.toBe(panels[0]!.id);
+  for (const panel of panels) {
+    const tabs = panel.closest(".radv-workbook")!.querySelectorAll('[role="tab"]');
+    for (const tab of tabs) expect(tab.getAttribute("aria-controls")).toBe(panel.id);
+  }
+});

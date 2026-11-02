@@ -14,7 +14,6 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -61,6 +60,7 @@ const HINT_VISIBLE_MS = 3200;
 const MAX_RENDER_ISSUES = 40;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
+let nextWorksheetPanelId = 0;
 
 function clamp(value: number, min: number, max: number): number {
   return value < min ? min : value > max ? max : value;
@@ -112,7 +112,11 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
   const labels = useMemo(() => mergeLabels(labelOverrides), [labelOverrides]);
   const resolvedSource = source ?? file ?? null;
   const controlsVisible = showToolbar ?? showControls;
-  const worksheetPanelId = useId();
+  // Assign after mount so React 17 works and server/client initial markup agrees.
+  const [worksheetPanelId, setWorksheetPanelId] = useState<string>();
+  useEffect(() => {
+    setWorksheetPanelId(`radv-worksheet-panel-${++nextWorksheetPanelId}`);
+  }, []);
 
   /* ------------------------------------------------------ render issues */
 
