@@ -35,6 +35,7 @@ export interface XlsxFixtureOptions {
   date1904?: boolean;
   title?: string;
   creator?: string;
+  extraParts?: Record<string, string | Uint8Array>;
 }
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -206,6 +207,7 @@ export function buildXlsx(options: XlsxFixtureOptions): Uint8Array {
       "xl/sharedStrings.xml": strToU8(sharedStringsPart),
       "xl/styles.xml": strToU8(STYLES_XML),
       ...sheetParts,
+      ...Object.fromEntries(Object.entries(options.extraParts ?? {}).map(([path, value]) => [path, typeof value === "string" ? strToU8(value) : value])),
     },
     { level: 6 },
   );

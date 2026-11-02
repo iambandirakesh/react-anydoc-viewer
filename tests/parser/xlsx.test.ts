@@ -125,7 +125,7 @@ describe("XLSX", () => {
       ),
     );
     expect(parsed.model.diagnostics.map((diagnostic) => diagnostic.code)).toContain("xlsx.formula.cache");
-    expect(pageMarkup(parsed, 0)).not.toContain("2");
+    expect(parsed.pageData[0]?.rows[0]?.[0]?.text ?? "").toBe("");
     parsed.dispose();
   });
 

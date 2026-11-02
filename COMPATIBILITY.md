@@ -187,17 +187,22 @@ formulas display the cached result, and a formula without one is reported.
 | --- | --- | --- |
 | Workbook and sheet order (`xl/workbook.xml` + relationships) | Implemented | Part names and numeric suffixes are not used for ordering |
 | Shared strings, inline strings, numbers, booleans, error values | Implemented | Values are always text in the DOM, never markup |
-| Number formats: general, date, date-time, percentage, custom codes | Partial | Common built-in and custom date/percent formats are recognised; an unrecognised code falls back to the raw number with a diagnostic |
+| Number formats: general, date, date-time, percentage, custom codes | Partial | Common date/percent formats, decimal precision, thousands separators, currency literals, negative sections and comma-scaled units; complex conditional/scientific/fraction codes are not fully interpreted |
 | Date systems 1900 and 1904 | Implemented | The 1900 leap-year quirk is preserved |
 | Formulas | Partial | The cached `<v>` is shown; formulas are never recalculated (`xlsx.formula.cache` when absent) |
 | Sparse rows/columns | Implemented | Cells keep their real coordinates; empty rows are not collapsed |
 | Merged ranges (`mergeCells`) | Implemented | `colspan`/`rowspan`; overlapping or hidden-content ranges are reported |
 | Column widths (`cols`) | Implemented | Converted to pixels; default width otherwise |
+| Fonts, solid fills, cell borders, alignment and wrapping | Partial | Shared cell styles, row/column defaults, theme/indexed colors and RGB tint approximation; rich-text runs, gradient/pattern fills and rotated text are not reproduced |
+| Row heights, hidden rows/columns and gridline visibility | Implemented | Drawing anchors use the visible row/column dimensions; text is clipped to the recorded row height rather than auto-sized |
+| Embedded charts and images | Partial | Common cached chart families reuse the PPTX renderer; two-cell, one-cell and absolute drawing anchors are supported; external assets are blocked |
 | Hidden sheets | Implemented | Shown, with an info diagnostic naming them |
-| Charts, pivot tables, conditional formatting, images, comments | Reported | `xlsx.sheet.kind` / not read; the grid is unaffected |
+| Conditional formatting | Partial | Positive/negative data bars, two-/three-color scales, numeric-constant comparisons with common differential styles, and symbol approximations for common icon sets. Numeric, min/max, percent and percentile thresholds; formula and extension rules remain unsupported |
+| Pivot styling and table styles | Reported | Reported when their worksheet declarations are present; cached cell values remain visible |
+| Comments, defined names, advanced drawing objects | Not supported | Unsupported drawing objects are reported |
 | Chartsheets and dialog sheets | Reported | Named in a diagnostic; not drawn |
 | Macros (`.xlsm`) | Not supported | The macro part is never read or executed |
-| Cell and row caps | Partial | 50 000 cells parsed, 10 000 cells rendered per page, 5 000 rows / 200 columns per sheet, 2 000 merges; each cap is reported instead of freezing |
+| Cell and row caps | Partial | 50 000 cells parsed, 10 000 cells rendered per page, 5 000 rows / 200 columns per sheet, 2 000 merges and 200 drawing anchors; caps are reported |
 | `.xls` (legacy binary) | Reported | `UNSUPPORTED_FORMAT` naming the legacy Excel binary |
 
 ## PDF files
@@ -263,9 +268,9 @@ ships; the viewer does not attempt to read PDF content streams itself.
 | CRLF / LF / CR records, missing final newline | Implemented | All four endings |
 | Values kept as text | Implemented | No number, date or boolean coercion; `0123` stays `0123` |
 | Rows that do not match the header | Reported | Counted in a diagnostic; values are shown as they are, never padded or shifted |
-| Wide tables | Partial | A table wider than a portrait page gets a landscape page; wider than that and the columns are scaled down and clipped, with a diagnostic |
-| Header row | Implemented | Repeated at the top of every page |
-| Row limit | Partial | 20 000 rows kept (configurable in code, reported as a diagnostic when exceeded) |
+| Wide tables | Partial | One scrollable table; natural column widths, horizontal scrolling and fit-to-width controls |
+| Header row | Implemented | Styled first record in a single table; no repeated page headers |
+| Row limit | Partial | 20,000 data rows parsed; 10,000 cells and 200 columns displayed, with truncation diagnostics |
 | Encoding | Implemented | UTF-8, UTF-16 (with or without a BOM), otherwise Windows-1252 with a warning |
 | Type inference, formulas, multi-line cells beyond quoting | Not supported | Out of scope: this is a viewer, not a spreadsheet |
 
@@ -320,3 +325,7 @@ assigned, no `pageerror`, and no response at all for the beacon.
 It does **not** include a corpus of real-world Office documents. Compatibility
 claims therefore describe the constructs listed above, not "any .pptx, .docx,
 .xlsx, .pdf or .tiff file".
+
+XLSX chart series can also read direct worksheet range references when chart caches are absent. Referenced formula cells require saved results; formulas and external workbook references are not evaluated.
+
+Worksheet tools include cross-sheet cell search, saved per-sheet scrolling, fit-to-width, keyboard/range selection and copy, and formatted-value CSV export. Search controls are shown only for XLSX/XLSM and CSV/delimited tables.

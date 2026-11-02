@@ -7,10 +7,10 @@
  * becomes the page list. Navigation, thumbnails, zoom, presentation mode and the
  * error boundary therefore work without any format-specific viewer code.
  *
- * The parser reads values and the small amount of style data needed to display
- * them (number formats and dates). Formulas are never evaluated: the cached
+ * The parser preserves common cell styles, worksheet dimensions and anchored
+ * chart/image drawings. Formulas are never evaluated: the cached
  * `<v>` written by the producer is shown, and a formula without a cache is
- * reported instead of guessed at. Conditional formatting, charts, pivot tables
+ * reported instead of guessed at. Complex conditional formatting, pivot tables
  * and macros are outside the read-only surface.
  */
 
@@ -20,11 +20,15 @@ import { readText, type Archive, type ArchiveLimits } from "../archive";
 import { attr, attrBool, attrNum, child, children, find, parseXml, relAttr, type XmlNode } from "../xml";
 import { parseRelationships, relTypeName, relsPartNameFor } from "../relationships";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "../diagnostics";
-import { DEFAULT_COLOR_MAP, createEmptyTheme } from "../theme";
-import { createEmptyMediaStore, type MediaStore } from "../media";
+import { DEFAULT_COLOR_MAP, parseTheme } from "../theme";
+import { createMediaStore, type MediaStore } from "../media";
+import { parseVisualStyles } from "./visualStyles";
+import { readSheetDrawings } from "./drawings";
+import type { CSSProperties } from "react";
 import { boxEmu } from "../plaintext/metrics";
 import { createSheetPageRenderer } from "../../components/SheetPage";
 import type { PageRenderer } from "../../renderer/pageRenderer";
+import { applyConditionalFormatting } from "./conditionalFormatting";
 import { formatNumericCell, parseStyles } from "./styles";
 import type { SheetCell, SheetPageData } from "./model";
 
@@ -65,6 +69,7 @@ interface SheetRef {
 interface ParsedCell {
   text: string;
   numeric: boolean;
+  style?: CSSProperties;
 }
 
 interface MergeRange {
@@ -261,14 +266,15 @@ function parseCellValue(
 }
 
 function columnWidths(root: XmlNode, count: number): number[] {
-  const widths = new Array<number>(count).fill(Math.round(DEFAULT_COLUMN_CHARS * 7.2 + 12));
+  const defaultChars = attrNum(child(root, "sheetFormatPr"), "defaultColWidth") ?? DEFAULT_COLUMN_CHARS;
+  const widths = new Array<number>(count).fill(Math.min(Math.max(Math.floor(defaultChars * 7 + 5), 1), 2048));
   const cols = child(root, "cols");
   for (const col of children(cols, "col")) {
     const min = attrNum(col, "min");
     const max = attrNum(col, "max");
-    const width = attrNum(col, "width");
-    if (min === null || max === null || width === null) continue;
-    const px = Math.min(Math.max(Math.round(width * 7.2 + 12), 24), 480);
+    const width = attrNum(col, "width") ?? DEFAULT_COLUMN_CHARS;
+    if (min === null || max === null) continue;
+    const px = attrBool(col, "hidden") ? 0 : Math.min(Math.max(Math.floor(width * 7 + 5), 1), 2048);
     for (let index = Math.max(min, 1) - 1; index <= Math.min(max, count) - 1; index += 1) {
       widths[index] = px;
     }
@@ -283,9 +289,18 @@ function buildSheetPage(
   styles: ReturnType<typeof parseStyles>,
   date1904: boolean,
   warn: (code: string, message: string) => void,
+  visualStyles: CSSProperties[],
 ): SheetPageData {
   const cells = new Map<number, Map<number, ParsedCell>>();
   const merges: MergeRange[] = [];
+  const heights: number[] = [];
+  const rowStyles = new Map<number, number>();
+  const colStyles = new Map<number, number>();
+  for (const col of children(child(root, "cols"), "col")) {
+    const style = attrNum(col, "style");
+    if (style === null) continue;
+    for (let i = Math.max(0, (attrNum(col, "min") ?? 1) - 1); i < Math.min(MAX_COLUMNS, attrNum(col, "max") ?? 1); i++) colStyles.set(i, style);
+  }
   let maxRow = 0;
   let maxCol = 0;
   let parsedCells = 0;
@@ -298,6 +313,13 @@ function buildSheetPage(
     const explicitRow = attrNum(rowNode, "r");
     const rowIndex = explicitRow !== null ? Math.max(explicitRow - 1, 0) : nextRow;
     nextRow = rowIndex + 1;
+    if (rowIndex < MAX_ROWS) {
+      const defaultHeight = attrNum(child(root, "sheetFormatPr"), "defaultRowHeight") ?? 15;
+      heights[rowIndex] = attrBool(rowNode, "hidden") ? 0 : Math.min(Math.max(attrNum(rowNode, "ht") ?? defaultHeight, 0), 409) * 96 / 72;
+      const style = attrNum(rowNode, "s");
+      if (style !== null && attrBool(rowNode, "customFormat") !== false) rowStyles.set(rowIndex, style);
+      maxRow = Math.max(maxRow, rowIndex + 1);
+    }
     let nextColumn = 0;
     for (const cellNode of children(rowNode, "c")) {
       const ref = attr(cellNode, "r");
@@ -309,9 +331,12 @@ function buildSheetPage(
         omittedCells = true;
         break outer;
       }
-      const parsed = parseCellValue(cellNode, sharedStrings, styles, date1904, warn);
-      if (!parsed) continue;
       parsedCells += 1;
+      if (rowIndex >= MAX_ROWS || cellColumn >= MAX_COLUMNS) { truncated = true; continue; }
+      const styleIndex = attrNum(cellNode, "s") ?? rowStyles.get(rowIndex) ?? colStyles.get(cellColumn) ?? 0;
+      const effectiveNode = { ...cellNode, attrs: { ...cellNode.attrs, s: String(styleIndex) } };
+      const parsed = parseCellValue(effectiveNode, sharedStrings, styles, date1904, warn) ?? { text: "", numeric: false };
+      parsed.style = visualStyles[styleIndex];
       const row = cells.get(rowIndex) ?? new Map<number, ParsedCell>();
       row.set(cellColumn, parsed);
       cells.set(rowIndex, row);
@@ -354,8 +379,8 @@ function buildSheetPage(
     rowSpan: 1,
     align: "left",
   });
-  const matrix: SheetCell[][] = Array.from({ length: rowLimit }, () =>
-    Array.from({ length: columnLimit }, blankCell),
+  const matrix: SheetCell[][] = Array.from({ length: rowLimit }, (_, rowIndex) =>
+    Array.from({ length: columnLimit }, (_, colIndex) => ({ ...blankCell(), style: visualStyles[rowStyles.get(rowIndex) ?? colStyles.get(colIndex) ?? 0] })),
   );
 
   for (const [rowIndex, row] of cells) {
@@ -367,6 +392,8 @@ function buildSheetPage(
       target.text = parsed.text;
       target.numeric = parsed.numeric;
       target.align = parsed.numeric ? "right" : "left";
+      target.style = parsed.style;
+      if (parsed.style?.textAlign === "left" || parsed.style?.textAlign === "center" || parsed.style?.textAlign === "right") target.align = parsed.style.textAlign;
     }
   }
 
@@ -416,6 +443,8 @@ function buildSheetPage(
     name,
     rows: matrix,
     widths: columnWidths(root, columnLimit),
+    heights: Array.from({ length: rowLimit }, (_, index) => heights[index] ?? (attrNum(child(root, "sheetFormatPr"), "defaultRowHeight") ?? 15) * 96 / 72),
+    showGridLines: attrBool(children(child(root, "sheetViews"), "sheetView")[0], "showGridLines") !== false,
     truncated,
   };
 }
@@ -444,6 +473,9 @@ export function parseXlsxArchive(archive: Archive, options: XlsxParseOptions = {
 
   const sharedStrings = readSharedStrings(archive);
   const styles = readStyles(archive);
+  const theme = parseTheme(tryParse(archive, "xl/theme/theme1.xml"));
+  const stylesRoot = tryParse(archive, "xl/styles.xml");
+  const visualStyles = parseVisualStyles(stylesRoot, theme);
   const core = readCoreProperties(archive);
 
   const pageData: SheetPageData[] = [];
@@ -471,7 +503,12 @@ export function parseXlsxArchive(archive: Archive, options: XlsxParseOptions = {
       if (!root) {
         warn("xlsx.sheet.missing", `The worksheet part "${sheet.part}" is missing or unreadable.`);
       } else {
-        data = buildSheetPage(root, sheet.name, sharedStrings, styles, date1904, warn);
+        data = buildSheetPage(root, sheet.name, sharedStrings, styles, date1904, warn, visualStyles);
+        applyConditionalFormatting(root, data, theme, warn, stylesRoot);
+        data.drawings = readSheetDrawings(archive, sheet.part, root, data, theme, warn);
+        for (const local of ["pivotTableParts", "tableParts"]) {
+          if (child(root, local)) warn(`xlsx.${local}`, `${local} appearance is not yet applied.`);
+        }
       }
     }
 
@@ -484,7 +521,7 @@ export function parseXlsxArchive(archive: Archive, options: XlsxParseOptions = {
     width: page.width,
     height: page.height,
     slides,
-    theme: createEmptyTheme(),
+    theme,
     colorMap: DEFAULT_COLOR_MAP,
     textStyles: { title: [], body: [], other: [] },
     title: core.title,
@@ -493,7 +530,7 @@ export function parseXlsxArchive(archive: Archive, options: XlsxParseOptions = {
     diagnostics: diagnostics.list(),
   };
 
-  const media = createEmptyMediaStore();
+  const media = createMediaStore(archive);
   return {
     model,
     media,

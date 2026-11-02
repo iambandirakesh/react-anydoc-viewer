@@ -1,3 +1,4 @@
+import { buildXlsx } from "../fixtures/xlsx";
 import { StrictMode, createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -806,25 +807,23 @@ describe("DocumentViewer with text, table and image files", () => {
       <DocumentViewer source={encode("id,name\n1,Ada\n2,Grace\n")} onLoad={onLoad} />,
     );
     await waitForReady(container);
-    const grid = container.querySelector("[data-testid='rv-grid-page']");
+    const grid = container.querySelector("[data-testid='rv-sheet-page']");
     expect(grid).toBeTruthy();
-    expect(grid?.querySelector("th")?.textContent).toBe("id");
+    expect(grid?.querySelector("tbody td")?.textContent).toBe("id");
     expect(grid?.textContent).toContain("Ada");
     expect(grid?.textContent).toContain("Grace");
     expect(onLoad.mock.calls[0]?.[0]?.format).toBe("csv");
   });
 
-  it("paginates a long table and repeats the header on every page", async () => {
+  it("renders a long CSV as one scrollable worksheet", async () => {
     const rows = Array.from({ length: 60 }, (_, i) => `${i},row ${i}`).join("\n");
-    const { container } = render(<DocumentViewer source={encode(`id,label\n${rows}\n`)} showControls />);
+    const onLoad = vi.fn();
+    const { container } = render(<DocumentViewer source={encode(`id,label\n${rows}\n`)} onLoad={onLoad} />);
     await waitForReady(container);
-    expect(container.textContent).toContain("1 / 2");
-
-    fireEvent.click(screen.getByLabelText("Next slide"));
-    await waitFor(() => expect(container.textContent).toContain("2 / 2"));
-    const grid = container.querySelector("[data-testid='rv-grid-page']");
-    expect(grid?.querySelector("th")?.textContent).toBe("id");
-    expect(grid?.textContent).toContain("row 59");
+    expect(onLoad.mock.calls[0]?.[0]?.slideCount).toBe(1);
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(61);
+    expect(container.querySelector(".radv-sheet-scroll")?.textContent).toContain("row 59");
+    expect(screen.queryByLabelText("Next slide")).toBeNull();
   });
 
   it("paginates a long text file and navigates it like a deck", async () => {
@@ -892,3 +891,17 @@ describe("DocumentViewer with text, table and image files", () => {
     ).toContain("text.html.source");
   });
 });
+
+ it("uses worksheet tabs and keeps arrow scrolling from changing worksheets", async () => {
+   const bytes = buildXlsx({ sheets: [{ name: "Dashboard", rows: [["First sheet"]] }, { name: "Categories", rows: [["Second sheet"]] }] });
+   const { container } = render(<DocumentViewer source={bytes} showThumbnails />);
+   await waitForReady(container);
+   expect(screen.getByRole("tab", { name: "Dashboard" }).getAttribute("aria-selected")).toBe("true");
+   expect(container.querySelector(".radv-thumbnails")).toBeNull();
+   fireEvent.keyDown(screen.getByRole("tabpanel"), { key: "ArrowRight" });
+   expect(screen.getByRole("tab", { name: "Dashboard" }).getAttribute("aria-selected")).toBe("true");
+   fireEvent.click(screen.getByRole("tab", { name: "Categories" }));
+   expect(screen.getByRole("tabpanel").textContent).toContain("Second sheet");
+   fireEvent.keyDown(screen.getByRole("tab", { name: "Categories" }), { key: "Home" });
+   expect(screen.getByRole("tab", { name: "Dashboard" }).getAttribute("aria-selected")).toBe("true");
+ });

@@ -26,6 +26,7 @@ import {
   buildSamplePdf,
 } from "./sampleDocument";
 import { buildXlsx } from "../../../tests/fixtures/xlsx";
+import { buildDashboardWorkbook } from "../../../tests/fixtures/xlsxDashboard";
 import { buildTiff } from "../../../tests/fixtures/tiff";
 
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -233,6 +234,9 @@ export function App() {
           </button>
           <button type="button" className="demo__button" onClick={loadSampleXlsx}>
             Load sample .xlsx
+          </button>
+          <button type="button" className="demo__button" onClick={() => loadBytes(buildDashboardWorkbook(), "sample-dashboard.xlsx", XLSX_MIME)}>
+            Load XLSX dashboard
           </button>
           <button type="button" className="demo__button" onClick={loadSampleTiff}>
             Load sample .tiff

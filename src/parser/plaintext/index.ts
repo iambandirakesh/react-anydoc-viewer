@@ -20,7 +20,9 @@ import { DEFAULT_COLOR_MAP, createEmptyTheme } from "../theme";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "../diagnostics";
 import type { PageRenderer } from "../../renderer/pageRenderer";
 import { createTextPageRenderer } from "../../components/TextPage";
-import { createGridPageRenderer, type GridPageData } from "../../components/GridPage";
+import type { GridPageData } from "../../components/GridPage";
+import { createSheetPageRenderer } from "../../components/SheetPage";
+import type { SheetPageData } from "../xlsx/model";
 import { classifyPlainText, classifyTextBytes, type Classification, type PlainTextKind } from "./classify";
 import { decodeTextFile } from "./decode";
 import { paginateText, MAX_PAGES, type TextPage } from "./paginate";
@@ -31,7 +33,6 @@ import {
   CHAR_WIDTH_PX,
   MAX_COLUMN_CHARS,
   contentBox,
-  rowsPerPage,
   type Orientation,
 } from "./metrics";
 
@@ -109,7 +110,7 @@ function columnWidths(table: CsvTable): number[] {
       const length = (row[index] ?? "").length;
       if (length > widest) widest = length;
     }
-    return clamp(widest, 4, MAX_COLUMN_CHARS) * CHAR_WIDTH_PX + CELL_PADDING_PX;
+    return Math.min(320, clamp(widest, 4, MAX_COLUMN_CHARS) * CHAR_WIDTH_PX + CELL_PADDING_PX);
   });
 }
 
@@ -117,46 +118,13 @@ interface GridLayout {
   pages: GridPageData[];
   widths: number[];
   orientation: Orientation;
-  squeezed: boolean;
 }
 
-/**
- * Turn a table into pages.
- *
- * A table wider than a portrait page is given a landscape page rather than being
- * clipped; only when it is wider than that too are the columns scaled down, and
- * that is reported.
- */
+/** Keep the entire parsed table in one scrollable worksheet. */
 function layoutGrid(table: CsvTable): GridLayout {
-  let widths = columnWidths(table);
-  let orientation: Orientation = "portrait";
-  let squeezed = false;
-
-  const portraitWidth = contentBox("portrait").widthPx;
-  const landscapeWidth = contentBox("landscape").widthPx;
-  const total = () => widths.reduce((sum, value) => sum + value, 0);
-
-  if (total() > portraitWidth) {
-    orientation = "landscape";
-    if (total() > landscapeWidth) {
-      const scale = landscapeWidth / total();
-      widths = widths.map((value) => Math.max(value * scale, CHAR_WIDTH_PX + CELL_PADDING_PX));
-      squeezed = true;
-    }
-  }
-
-  const hasHeader = table.header.length > 0;
-  const perPage = Math.max(rowsPerPage(orientation) - (hasHeader ? 1 : 0), 1);
-  const pages: GridPageData[] = [];
-  for (let start = 0; start < Math.max(table.rows.length, 1); start += perPage) {
-    const rows = table.rows.slice(start, start + perPage);
-    pages.push({
-      rows: hasHeader ? [table.header, ...rows] : rows,
-      widths,
-      header: hasHeader,
-    });
-  }
-  return { pages, widths, orientation, squeezed };
+  const widths = columnWidths(table);
+  const orientation: Orientation = widths.reduce((a, b) => a + b, 0) > contentBox("portrait").widthPx ? "landscape" : "portrait";
+  return { pages: [{ rows: table.header.length ? [table.header, ...table.rows] : table.rows, widths, header: table.header.length > 0 }], widths, orientation };
 }
 
 /** Assemble the model both kinds of page share. */
@@ -251,13 +219,6 @@ export function parsePlainTextDocument(
       ...(classification.delimiter && !options.contentHint ? { delimiter: classification.delimiter } : {}),
     });
     const layout = layoutGrid(table);
-    if (layout.squeezed) {
-      diagnostics.add({
-        severity: "warning",
-        code: "text.csv.width",
-        message: `The table is wider than a landscape page, so its ${table.columns} columns are scaled down and long values are clipped.`,
-      });
-    }
     if (table.raggedRows > 0) {
       diagnostics.add({
         severity: "warning",
@@ -278,12 +239,28 @@ export function parsePlainTextDocument(
       message: delimiterMessage(table),
     });
 
+    const sourceColumns = Math.max(table.columns, ...layout.pages[0]!.rows.map((row) => row.length));
+    const columns = Math.min(200, sourceColumns);
+    const rowLimit = Math.max(1, Math.floor(10000 / Math.max(1, columns)));
+    const rows = layout.pages[0]!.rows.slice(0, rowLimit);
+    const truncated = table.truncated || columns < sourceColumns || rows.length < layout.pages[0]!.rows.length;
+    if (truncated && !table.truncated) diagnostics.add({ severity: "warning", code: "text.csv.cell-limit", message: "Only the first 10,000 cells and 200 columns are shown in the table." });
+    const data: SheetPageData = {
+      name: "Table",
+      rows: rows.map((row, rowIndex) => Array.from({ length: columns }, (_, colIndex) => ({
+        text: row[colIndex] ?? "", align: "left" as const, numeric: false, covered: false, colSpan: 1, rowSpan: 1,
+        style: { whiteSpace: "pre-wrap" as const, overflowWrap: "anywhere", verticalAlign: "middle", ...(layout.pages[0]!.header && rowIndex === 0 ? { fontWeight: 700, backgroundColor: "#edf0f5" } : {}) },
+      }))),
+      widths: Array.from({ length: columns }, (_, index) => layout.widths[index] ?? 120),
+      heights: rows.map(() => 26), autoRowHeight: true, showGridLines: true, truncated,
+    };
     const slides = gridPages(layout.pages);
+    slides[0]!.name = "Table";
     return {
       format: "csv",
       model: buildModel(slides, layout.orientation, diagnostics),
       media,
-      renderPage: createGridPageRenderer(layout.pages),
+      renderPage: createSheetPageRenderer([data]),
       dispose: () => media.dispose(),
     };
   }

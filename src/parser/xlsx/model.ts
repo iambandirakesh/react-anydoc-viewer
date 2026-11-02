@@ -1,3 +1,6 @@
+import type { CSSProperties } from "react";
+import type { ShapeNodeUnion } from "../../model/types";
+
 /** A cell as it will appear on a spreadsheet page. */
 export interface SheetCell {
   /** text exactly as it should be displayed; already number/date formatted */
@@ -12,6 +15,10 @@ export interface SheetCell {
   colSpan: number;
   /** number of rows this cell spans (1 when not merged) */
   rowSpan: number;
+  style?: CSSProperties;
+  dataBar?: { width: number; color: string; left?: number };
+  hideValue?: boolean;
+  icon?: { text: string; label: string; color: string };
 }
 
 /** One rendered worksheet. A sheet is one page, just like a slide. */
@@ -20,6 +27,10 @@ export interface SheetPageData {
   rows: SheetCell[][];
   /** widths in CSS pixels for each data column, without the row-number column */
   widths: number[];
+  heights?: number[];
+  autoRowHeight?: boolean;
+  showGridLines?: boolean;
+  drawings?: ShapeNodeUnion[];
   /** true when rows/columns were omitted because the sheet is very large */
   truncated: boolean;
 }

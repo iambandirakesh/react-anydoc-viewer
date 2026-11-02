@@ -853,3 +853,26 @@ test.describe("HTML files", () => {
     expect(responses.filter((url) => url.includes("example.invalid"))).toEqual([]);
   });
 });
+
+test("worksheet layout stays contained and chart anchors follow row dimensions", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load XLSX dashboard" }).click();
+  await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute("aria-selected", "true");
+  const metrics = await page.evaluate(() => {
+    const root = document.querySelector(".radv-root")!.getBoundingClientRect();
+    const workbook = document.querySelector(".radv-workbook")!.getBoundingClientRect();
+    const chart = document.querySelector('[data-shape-kind="chart"]')!.getBoundingClientRect();
+    const row = document.querySelectorAll(".radv-sheet tbody tr")[5]!.getBoundingClientRect();
+    return { root: root.width, workbook: workbook.width, anchorGap: chart.top - row.top, page: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth };
+  });
+  expect(metrics.workbook).toBeLessThanOrEqual(metrics.root + 1);
+  expect(metrics.page).toBeLessThanOrEqual(metrics.viewport + 1);
+  expect(metrics.anchorGap).toBeGreaterThanOrEqual(11);
+  expect(metrics.anchorGap).toBeLessThanOrEqual(13);
+  await page.getByRole("searchbox", { name: "Search all worksheets" }).fill("Cosmetics");
+  await page.getByRole("button", { name: "Next search result" }).click();
+  await expect(page.getByRole("tab", { name: "Categories" })).toHaveAttribute("aria-selected", "true");
+  await page.locator('[data-cell="3:0"]').click();
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(page.locator('[data-cell][aria-selected="true"]')).toHaveCount(2);
+});
