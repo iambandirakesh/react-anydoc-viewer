@@ -17,6 +17,8 @@ const { version } = JSON.parse(readFileSync(resolve(projectRoot, "package.json")
  */
 export default defineConfig({
   root: here,
+  // GitHub Pages serves the site from `/<repo>/`; the deploy workflow sets this.
+  base: process.env.DEMO_BASE ?? "/",
   plugins: [react()],
   // The demo renders `src/index.ts` directly, and that module reads the version
   // the library build injects, so the demo build has to inject it too.
