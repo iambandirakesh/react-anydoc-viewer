@@ -662,6 +662,31 @@ describe("DocumentViewer", () => {
     expect(onSlideChange).toHaveBeenLastCalledWith(0);
   });
 
+  it("reports an out-of-range default page once when a new document opens", async () => {
+    const deck = (name: string, count: number) =>
+      buildPptx({
+        slides: Array.from({ length: count }, (_, index) => ({
+          part: `ppt/slides/slide${index + 1}.xml`,
+          shapes: sp({ ph: "title", text: paragraph({ runs: run({ text: `${name} ${index + 1}` }) }) }),
+        })),
+      });
+    const ref = createRef<DocumentViewerHandle>();
+    const onSlideChange = vi.fn();
+    const { container, rerender } = render(
+      <DocumentViewer ref={ref} source={deck("Deck A", 5)} defaultSlide={99} onSlideChange={onSlideChange} />,
+    );
+    await waitForReady(container);
+    act(() => ref.current?.first());
+    await waitFor(() => expect(canvasOf(container).getByText("Deck A 1")).toBeTruthy());
+
+    onSlideChange.mockClear();
+    rerender(
+      <DocumentViewer ref={ref} source={deck("Deck B", 3)} defaultSlide={99} onSlideChange={onSlideChange} />,
+    );
+    await waitFor(() => expect(canvasOf(container).getByText("Deck B 3")).toBeTruthy());
+    expect(onSlideChange.mock.calls).toEqual([[2]]);
+  });
+
   it("respects a controlled slide index", async () => {
     const bytes = twoSlides();
     const { container, rerender } = render(<DocumentViewer source={bytes} slide={0} />);

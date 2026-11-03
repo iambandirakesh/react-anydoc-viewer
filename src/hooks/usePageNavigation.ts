@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
-
-function clamp(value: number, min: number, max: number): number {
-  return value < min ? min : value > max ? max : value;
-}
+import { clamp } from "../parser/units";
 
 export interface UsePageNavigationOptions {
   /** pages in the loaded document; 0 while nothing is loaded */
@@ -75,12 +72,14 @@ export function usePageNavigation({
     const reset = lastReset.current.key !== resetKey || lastReset.current.defaultIndex !== defaultIndex;
     lastReset.current = { key: resetKey, defaultIndex };
     if (reset && resetKey !== 0) {
-      setInternalIndex(defaultIndex);
       if (controlled === undefined) {
+        // Store the clamped page, or the bounds check below reports it again.
         const target = count === 0 ? 0 : clamp(Math.round(defaultIndex), 0, count - 1);
+        setInternalIndex(target);
         if (target !== internalIndex) onChangeRef.current?.(target);
         return;
       }
+      setInternalIndex(defaultIndex);
     }
     if (count === 0) return;
     if (requestedIndex < 0 || requestedIndex > count - 1 || !Number.isFinite(requestedIndex)) {

@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { clamp } from "../parser/units";
 import type { FitMode } from "../types/public";
 
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 8;
 const ZOOM_LADDER = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2, 3, 4];
-
-function clamp(value: number, min: number, max: number): number {
-  return value < min ? min : value > max ? max : value;
-}
 
 export interface UseZoomOptions {
   /** the `fit` prop; the user can change the mode, and a new prop value wins again */
