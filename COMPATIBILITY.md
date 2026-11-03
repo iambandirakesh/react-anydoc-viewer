@@ -29,7 +29,7 @@ Everything in the "Reported" column produces an entry in the diagnostics panel
 | Slide order via `p:sldIdLst` + `r:id` | Implemented | File names and numeric suffixes are never used for ordering |
 | Slide size (`p:sldSz` cx/cy) and aspect ratio | Implemented | Slide is never stretched; `fit` scales it uniformly |
 | Slide master, layout and theme resolution | Implemented | Layout → master → theme chain per slide |
-| Multiple masters/layouts | Partial | All layouts of the first master are read; a deck with several masters uses the first |
+| Multiple masters/layouts | Partial | Layouts and masters are resolved per slide; deck-level defaults use the first slide's master |
 | Core properties (title) | Implemented | Exposed on `onLoad` |
 | Notes slides, comments, custom XML, embedded workbooks | Not supported | Never inflated (they are not in the useful-parts filter) |
 | Encrypted / password-protected packages | Reported | `ENCRYPTED` error, recognised from the `EncryptedPackage`/`EncryptionInfo` streams in the OLE/CFB container |
@@ -129,7 +129,7 @@ Everything in the "Reported" column produces an entry in the diagnostics panel
 | Series colours from `spPr`, falling back to the theme accent palette | Implemented | |
 | `bubbleChart`, `radarChart`, `stockChart`, `surfaceChart` | Reported | Labelled placeholder |
 | 3-D chart variants (`bar3DChart`, `pie3DChart`, …) | Partial | Rendered as the 2-D equivalent |
-| Charts without cached values | Reported | `chart.empty` / `chart.unreadable`; a live chart is never recalculated |
+| Charts without cached values | Partial | PPTX reports missing caches; XLSX can resolve direct worksheet range references. Formula cells require saved results; charts are not recalculated |
 | Chart types with a chart part missing | Reported | `chart.no-relationship` / `chart.bad-relationship` |
 
 ## Links and interaction
@@ -178,8 +178,8 @@ same code paths.
 
 ## Excel workbooks (`.xlsx`, `.xlsm`)
 
-A workbook is read from SpreadsheetML and each worksheet becomes a grid page
-(hidden sheets are shown, with a diagnostic). Sheets are resolved through `xl/_rels/workbook.xml.rels`, so a
+A workbook is read from SpreadsheetML and each worksheet opens in a bottom tab
+with an internally scrollable grid (hidden sheets are shown, with a diagnostic). Sheets are resolved through `xl/_rels/workbook.xml.rels`, so a
 renamed or reordered package still shows the right sheets. Nothing is evaluated:
 formulas display the cached result, and a formula without one is reported.
 
@@ -187,7 +187,7 @@ formulas display the cached result, and a formula without one is reported.
 | --- | --- | --- |
 | Workbook and sheet order (`xl/workbook.xml` + relationships) | Implemented | Part names and numeric suffixes are not used for ordering |
 | Shared strings, inline strings, numbers, booleans, error values | Implemented | Values are always text in the DOM, never markup |
-| Number formats: general, date, date-time, percentage, custom codes | Partial | Common date/percent formats, decimal precision, thousands separators, currency literals, negative sections and comma-scaled units; complex conditional/scientific/fraction codes are not fully interpreted |
+| Number formats: general, date, date-time, percentage, custom codes | Partial | Common date/percent formats, decimal precision, thousands separators, currency literals, negative sections and comma-scaled units; modified General formats fall back to the saved value; complex conditional/scientific/fraction codes are not fully interpreted |
 | Date systems 1900 and 1904 | Implemented | The 1900 leap-year quirk is preserved |
 | Formulas | Partial | The cached `<v>` is shown; formulas are never recalculated (`xlsx.formula.cache` when absent) |
 | Sparse rows/columns | Implemented | Cells keep their real coordinates; empty rows are not collapsed |
@@ -195,14 +195,14 @@ formulas display the cached result, and a formula without one is reported.
 | Column widths (`cols`) | Implemented | Converted to pixels; default width otherwise |
 | Fonts, solid fills, cell borders, alignment and wrapping | Partial | Shared cell styles, row/column defaults, theme/indexed colors and RGB tint approximation; rich-text runs, gradient/pattern fills and rotated text are not reproduced |
 | Row heights, hidden rows/columns and gridline visibility | Implemented | Drawing anchors use the visible row/column dimensions; text is clipped to the recorded row height rather than auto-sized |
-| Embedded charts and images | Partial | Common cached chart families reuse the PPTX renderer; two-cell, one-cell and absolute drawing anchors are supported; external assets are blocked |
+| Embedded charts and images | Partial | Common chart families reuse the PPTX renderer, using caches or direct worksheet references; missing numeric points stay missing; two-cell, one-cell and absolute drawing anchors are supported; external assets are blocked |
 | Hidden sheets | Implemented | Shown, with an info diagnostic naming them |
 | Conditional formatting | Partial | Positive/negative data bars, two-/three-color scales, numeric-constant comparisons with common differential styles, and symbol approximations for common icon sets. Numeric, min/max, percent and percentile thresholds; formula and extension rules remain unsupported |
 | Pivot styling and table styles | Reported | Reported when their worksheet declarations are present; cached cell values remain visible |
 | Comments, defined names, advanced drawing objects | Not supported | Unsupported drawing objects are reported |
 | Chartsheets and dialog sheets | Reported | Named in a diagnostic; not drawn |
 | Macros (`.xlsm`) | Not supported | The macro part is never read or executed |
-| Cell and row caps | Partial | 50 000 cells parsed, 10 000 cells rendered per page, 5 000 rows / 200 columns per sheet, 2 000 merges and 200 drawing anchors; caps are reported |
+| Cell and row caps | Partial | 50 000 cells parsed, 10 000 cells rendered per worksheet, 5 000 rows / 200 columns per sheet, 2 000 merges and 200 drawing anchors; caps are reported |
 | `.xls` (legacy binary) | Reported | `UNSUPPORTED_FORMAT` naming the legacy Excel binary |
 
 ## PDF files
@@ -229,6 +229,14 @@ ships; the viewer does not attempt to read PDF content streams itself.
 
 ## Viewer chrome
 
+The floating toolbar, page thumbnails, fit dropdown and slideshow advancement below
+apply to paginated formats. XLSX and CSV use worksheet tabs and a separate tool row
+with search, fit-to-width, copy and CSV download, plus bottom zoom controls. Their
+cells have keyboard range selection; tab names use Left/Right and Home/End.
+Worksheet labels are currently built-in English, search fields remain white in
+both themes, and frozen panes are not supported.
+
+
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Previous/next and the slide counter | Implemented | Counter is `aria-live="polite"`; first/last are keyboard (`Home`/`End`) and handle actions rather than pill buttons |
@@ -239,7 +247,7 @@ ships; the viewer does not attempt to read PDF content streams itself.
 | Fullscreen | Implemented | Native API first, in-page overlay fallback; `Esc` exits |
 | Presentation (slideshow) mode | Implemented | Chrome and sidebar removed, black stage, click/Space/arrow/Page keys advance, `Esc` exits, controlled or uncontrolled |
 | Keyboard navigation | Implemented | Arrows, PageUp/Down, Space, Home, End, `n`/`p`, `+`/`-`, `0`, `f` |
-| Localisable labels | Implemented | `labels` prop, including the slide counter as a function |
+| Localisable labels | Partial | `labels` covers viewer/page-toolbar strings, including the slide counter; worksheet tool strings are currently English |
 | Dark chrome | Implemented | `dark` or `theme="dark"` |
 | Loading, error, empty-slide and per-slide failure states | Implemented | Replaceable with `renderLoader`/`renderError`/`renderSlideError` |
 | Print / PDF export | Not supported | Out of scope |
@@ -267,9 +275,10 @@ ships; the viewer does not attempt to read PDF content streams itself.
 | Quoted fields, `""` escapes, embedded newlines | Implemented | Character-by-character state machine, not `split()` |
 | CRLF / LF / CR records, missing final newline | Implemented | All four endings |
 | Values kept as text | Implemented | No number, date or boolean coercion; `0123` stays `0123` |
-| Rows that do not match the header | Reported | Counted in a diagnostic; values are shown as they are, never padded or shifted |
-| Wide tables | Partial | One scrollable table; natural column widths, horizontal scrolling and fit-to-width controls |
+| Rows that do not match the header | Reported | Counted in a diagnostic; cell positions are preserved; short rows show empty cells and display caps still apply |
+| Wide tables and long values | Implemented | One scrollable table, column widths capped at 320 CSS pixels; text wraps and rows grow to fit. Horizontal scrolling and fit-to-width remain available |
 | Header row | Implemented | Styled first record in a single table; no repeated page headers |
+| Search, range selection/copy and CSV export | Implemented | Shared worksheet tools; green range outlines without browser text highlighting, two-second copy notices, and CSV export of the displayed parsed range |
 | Row limit | Partial | 20,000 data rows parsed; 10,000 cells and 200 columns displayed, with truncation diagnostics |
 | Encoding | Implemented | UTF-8, UTF-16 (with or without a BOM), otherwise Windows-1252 with a warning |
 | Type inference, formulas, multi-line cells beyond quoting | Not supported | Out of scope: this is a viewer, not a spreadsheet |
@@ -314,13 +323,18 @@ top-down BMP and a truncated PNG), an undecodable format is refused by name, and
 real browser test uploads a PNG and checks the page box matches it. For delimited
 text: delimiter detection (comma, semicolon, tab, quoted commas, inconsistent
 rows), CRLF/CR/LF endings, escaped quotes, embedded newlines, ragged rows, the row
-limit, and header repetition across pages. For text files: BOM and encoding cases,
+limit, a single table for long files, and styled headers. For text files: BOM and encoding cases,
 whitespace-only and binary rejection, JSON pretty-printing, wrapping, page overflow
 and the page ceiling. For HTML: it is read as text with a diagnostic saying so, and
 a browser test uploads a hostile page — one that scripts the host document, calls
 `fetch` and loads a remote image — and asserts against the host page and the
 network that none of it happened: no frame anywhere in the stage, no global
 assigned, no `pageerror`, and no response at all for the beacon.
+
+Spreadsheet coverage also checks chart references without caches, missing values
+without false zeroes, modified General formats, conditional formatting, worksheet
+search/range copy, saved scroll positions, and unique panel IDs across viewer
+instances. Package verification covers React 17 CJS/SSR and React 19 ESM consumers.
 
 It does **not** include a corpus of real-world Office documents. Compatibility
 claims therefore describe the constructs listed above, not "any .pptx, .docx,

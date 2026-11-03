@@ -3,6 +3,16 @@
 Measured 1 November 2026 on this machine, installed Chrome, production demo at
 `http://127.0.0.1:5274`, 1280 × 900 viewport, thumbnail sidebar enabled.
 
+## Scope and current status
+
+This is a historical measurement report from the PPTX/PDF review included in
+0.2.1, not a fresh benchmark of 0.2.3. The worksheet tabs, XLSX styling/drawings,
+CSV grid and tools added in 0.2.3 were not measured here. The recommendations
+below remain unimplemented; added benchmarks are not runtime optimizations.
+For current features and limits, see [README.md](README.md) and
+[COMPATIBILITY.md](COMPATIBILITY.md). Re-run the commands below before using these
+numbers for a new release, device or workload.
+
 ## Results
 
 | File | Size | Runs | Median ready | Median first page mounted | Median PDF raster complete |

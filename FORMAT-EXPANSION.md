@@ -1,4 +1,4 @@
-# Extending `react-anydoc-viewer` to the full upload matrix
+# Format expansion: implementation status and historical proposal
 
 **Question.** The upload allow-list in the screenshot accepts images, PDF, `.docx`,
 `.xlsx`/`.xls`, `.pptx` and text/data (`.csv`, `.txt`, `.log`, `.json`, `.html`,
@@ -12,9 +12,15 @@ store) mean most of the new formats are *additive* rather than a rewrite. The
 real engineering is Excel, because a spreadsheet is a scrollable grid and not a
 paginated page.
 
-This document is an analysis, not a change set. Every claim about the current
-code below was read out of this repository; every claim about third-party
-libraries is sourced in the last section.
+## Current implementation through 0.2.3
+
+This file preserves the original planning analysis. The status below reflects the
+current code; sections 1–10 retain historical proposals and tradeoffs, **not a
+statement of what is implemented today**. In particular, the old proposals for
+virtualization, worksheet thumbnails, HTML previews and Markdown rendering must
+not be read as shipped features. For current behavior and limits use
+[README.md](README.md), [COMPATIBILITY.md](COMPATIBILITY.md) and
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Status
 
@@ -24,18 +30,30 @@ libraries is sourced in the last section.
 | 1 — images | **Implemented** (`src/parser/image.ts`, `src/components/ImagePage.tsx`) |
 | 2 — text and data (`.txt`, `.log`, `.json`, `.csv`, `.tsv`, `.html` as source) | **Implemented** (`src/parser/plaintext/`) |
 | 3 — Markdown as a rendered document | **Outstanding** — currently shown as source text, with a diagnostic |
-| 4 — Excel `.xlsx` | **Outstanding** |
+| 4 — Excel `.xlsx` / `.xlsm` | **Implemented subset** — styled cells, dimensions, merged ranges, embedded charts/images, common conditional rules and worksheet tools. The grid is capped, not virtualized; no worksheet thumbnails or frozen panes |
 | 5 — HTML in a sandboxed frame | **Implemented, then removed** (`htmlPreview`, `src/components/HtmlPage.tsx`): the maintainer decided the viewer should not render active content at all, so HTML is source-only, with no option |
 
-Two things changed while implementing, and the sections below are left as they
-were written so the reasoning is auditable:
+Decisions that supersede the historical proposal:
 
-- The text and CSV pages are drawn by their own page renderers (`TextPage`,
-  `GridPage`) rather than by building shapes for the existing slide renderer. The
-  `PageRenderer` seam already existed for exactly this (PDF uses it), exact
-  monospace metrics matter more than model uniformity, and it removed any risk of
-  disturbing the `.docx` layout pipeline. §5.1's "reuse the docx paginator" is
-  therefore superseded.
+- Plain text uses `TextPage` and its own paginator, rather than DOCX shape blocks.
+  CSV initially used `GridPage` pagination; since 0.2.3 it shares `SheetPage` with
+  XLSX as one scrollable table, with wrapped values and columns capped at 320px.
+- XLSX now includes visual styles, row/column dimensions, common conditional
+  formatting and chart/image drawing anchors. Cacheless charts can resolve direct
+  internal worksheet ranges; missing numeric values do not become zeroes.
+- Worksheet tabs replace the page sidebar/counter. Search, fit-to-width, range
+  selection/copy, per-sheet scroll restoration and CSV export are available for
+  XLSX/CSV. The grid uses a 10,000 displayed-cell cap rather than virtualization.
+  Text selection is represented by green range outlines, copy notices last two
+  seconds, and freeze controls were removed on request.
+- CSV downloads are now a built-in action: fields are quoted, and formula-like
+  text is prefixed with an apostrophe. Clipboard ranges preserve formatted text.
+- The main bundle contains the native parsers and worksheet tools. The proposed
+  lazy parser chunks and per-format viewport/mode API were not implemented;
+  pdf.js and UTIF remain external lazy imports.
+- React 17 remains the minimum peer version. Worksheet panel IDs are assigned
+  after mount without `useId`, and package checks cover React 17 CJS/SSR and
+  React 19 ESM.
 - HTML went through both options in §5.3 and ended at the cautious one. The frame
   was built first: an empty `sandbox`, the `default-src 'none'` policy §5.3 called
   the real fix, never `allow-same-origin`, behind an opt-in `htmlPreview` prop, with
@@ -47,6 +65,12 @@ were written so the reasoning is auditable:
   cookie-less origin.
 
 ---
+
+## Historical proposal (sections 1–10)
+
+The following research is retained for context; dependency versions, sizes and
+upstream maintenance statements are snapshots from the original analysis, not
+fresh registry checks or current recommendations.
 
 ## 1. Verdict per row of the matrix
 
@@ -494,7 +518,7 @@ encrypted. Small, self-contained, and it removes a documented lie. **Effort: S.*
 
 ## 8. Why hand-rolled over third-party parsers
 
-Researched 2026 facts (sources at the end):
+Historical research snapshot (sources at the end; versions/sizes not revalidated):
 
 | Option | License | Size (min+gzip) | Legacy `.xls` | Verdict here |
 | --- | --- | --- | --- | --- |
@@ -528,11 +552,11 @@ Each phase is independently shippable and verifiable with the existing gates
 | 1 | Images (incl. `.svg`, `.bmp`, `.avif`) | S | ✅ done |
 | 2 | Text/data: `.txt`, `.log`, `.json`, `.csv`, `.tsv`, `.html`-as-source + the text sniffer and `contentHint` | M | ✅ done |
 | 3 | Markdown rendered as a document (blocks → pages) | M | next |
-| 4 | Excel `.xlsx`: read-only parser, windowed grid, page-per-sheet, thumbnails, per-format fit | L | next |
+| 4 | Excel `.xlsx`: read-only parser and worksheet surface | L | Implemented subset in 0.2.0/0.2.3; capped grid, worksheet tabs and tools instead of windowing/thumbnails |
 | 5 | HTML in a sandboxed frame behind a toggle, with CSP and a browser test proving no execution | M | ✅ done, then removed on request — HTML is source-only |
 | — | Legacy `.doc`, `.ppt`, `.xls`, `.xlsb`, plus `.zip` | (non-goal) | reported clearly, never rendered |
 
-Acceptance criteria that must hold at every phase:
+Original acceptance criteria (the current implementation deviations are noted above):
 
 1. Format detection is still from bytes; a renamed or extension-less file loads.
 2. A page is still a slide — navigation, thumbnails, zoom, presentation mode,
