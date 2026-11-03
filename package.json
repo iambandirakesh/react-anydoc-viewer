@@ -1,6 +1,6 @@
 {
   "name": "react-anydoc-viewer",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Free, open-source, watermark-free React component that renders PowerPoint (.pptx), Word (.docx), Excel (.xlsx), PDF, TIFF and other document files in the browser. No paid APIs, no external services.",
   "keywords": [
     "react",
