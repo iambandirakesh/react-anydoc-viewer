@@ -9,6 +9,95 @@ will be called out under **Changed**.
 
 ## [Unreleased]
 
+No unreleased changes recorded yet.
+
+## [0.2.3] — 2026-11-02
+
+Sources: [#6 — spreadsheet viewer](https://github.com/iambandirakesh/react-anydoc-viewer/pull/6),
+[#7 — React 17 compatibility](https://github.com/iambandirakesh/react-anydoc-viewer/pull/7).
+
+### Added
+
+- XLSX/XLSM visual styling: fonts, solid fills, borders, alignment, wrapping, theme
+  colors, common number formats, merged cells, row heights and column widths.
+- Embedded worksheet charts and images positioned at their drawing anchors.
+  Charts can use cached data or direct worksheet range references, including
+  references to other sheets, when chart caches are absent.
+- Common conditional formatting: positive and negative data bars, two-/three-color
+  scales, numeric-constant comparisons, and symbol approximations for common icon
+  sets. Formula-based rules and extension-specific formatting remain unsupported.
+- Worksheet tools for XLSX and CSV: cell search, fit-to-width, range selection and
+  copying, CSV download, and remembered per-sheet scroll positions. Keyboard
+  navigation and accessible cell addresses/selection states are included.
+- A generated XLSX dashboard demo and spreadsheet regression coverage.
+
+### Changed
+
+- XLSX uses bottom worksheet tabs and internal scrolling instead of document page
+  navigation and thumbnails.
+- CSV/TSV renders as one scrollable table. Columns are capped at 320 CSS pixels;
+  long values wrap and rows grow to fit. Values remain text without type coercion.
+- Selected cells use green outlines without browser text-selection highlighting.
+  Copy confirmations disappear after two seconds; copying again restarts the timer.
+- Search controls appear only for XLSX/XLSM and CSV/delimited tables.
+
+### Fixed
+
+- Long unwrapped worksheet titles can extend into adjacent blank space, including
+  beyond the used range, without overlapping occupied cells.
+- Corrected worksheet row-height drift, chart/title spacing, crowded chart axis
+  labels, and layout overflow outside the viewer.
+- Missing numeric points in cacheless charts are omitted while retaining their
+  original indices and genuine zero values.
+- Custom formats such as `General;[Red]-General` fall back to the saved number
+  rather than displaying format-code text.
+- Restored React 17 CJS/SSR compatibility by replacing React 18's `useId` with
+  panel IDs assigned after mount. IDs remain unique across viewer instances and
+  keep worksheet tabs associated with the correct panel.
+
+## [0.2.2] — 2026-11-01
+
+Source: [#5 — chart labels and master placeholders](https://github.com/iambandirakesh/react-anydoc-viewer/pull/5).
+
+### Added
+
+- Chart hover details with category, series and exact value; pie/doughnut slices
+  also expose their percentage.
+
+### Fixed
+
+- Chart data labels show exact numbers instead of rounded abbreviations.
+- Visible bars are centered over their category labels when other series contain
+  zero values.
+- Inherited master/layout placeholder prompts no longer render over slide
+  content; their formatting and positioning remain available for inheritance.
+
+## [0.2.1] — 2026-11-01
+
+Source: [#4 — PPTX fidelity and benchmarks](https://github.com/iambandirakesh/react-anydoc-viewer/pull/4).
+
+### Fixed
+
+- Corrected bullet sizing and indentation, text autofit, table dimensions and
+  cells following merges, scaled-group positioning, and image-filled shapes.
+- Preserved disabled text wrapping and whitespace in text runs.
+- Improved multi-level chart categories, per-point colors, percentage labels and
+  stacked bars; removed numeric prefixes from pie labels and prevented clipped
+  column labels.
+- The exported package version now matches `package.json`.
+
+### Changed
+
+- Benchmarks support production previews, large-file uploads, PDF raster-completion
+  timing and thumbnail memory measurements. Documented measured results and
+  optimization recommendations; this release did not add runtime performance
+  optimizations.
+
+## [0.2.0] — 2026-10-26
+
+Source: [#2 — format expansion](https://github.com/iambandirakesh/react-anydoc-viewer/pull/2).
+The merged PR also includes native XLSX and TIFF support added after its initial description.
+
 ### Added
 
 - **Excel workbooks** (`.xlsx`, `.xlsm`): parsed from SpreadsheetML and drawn as a
@@ -79,20 +168,40 @@ will be called out under **Changed**.
 
 ## [0.1.3] — 2026-10-22
 
+### Changed
+
+- Updated package version and changelog metadata. No runtime changes from 0.1.2.
+  [Release commit](https://github.com/iambandirakesh/react-anydoc-viewer/commit/5443d9661e8ef5dcf4666d58f241a32bf7e6eedd).
+
+## [0.1.2] — 2026-10-22
+
+Source: [#3 — batched DOCX measurement](https://github.com/iambandirakesh/react-anydoc-viewer/pull/3).
+
 ### Performance
 
 - A long `.docx` no longer costs one forced layout per paragraph. Every paragraph
   in a document is measured at the same width, so the whole document is now laid
   out in one pass and the heights are read afterwards: a 6,000-paragraph document
-  (360 pages) loads in 624 ms instead of 727 ms on the machine the benchmark runs
-  on, with the same pagination. A measurer that cannot batch is still called per
+  (360 pages) was measured at 608–643 ms instead of 727 ms on the PR
+  benchmark machine, with the same pagination. A measurer that cannot batch is still called per
   paragraph, with identical results.
 - `npm run bench` (Playwright) measures time-to-first-page for a generated
   `.pptx`, `.docx` and `.pdf`, scales them with `BENCH_SCALE`, and prints the CPU
   hotspots with `BENCH_PROFILE=1`, so a slow document can be attributed rather
   than guessed at.
 
-## [0.1.0] — unreleased (initial release)
+## [0.1.1] — 2026-10-14
+
+Source: [#1 — release 0.1.1](https://github.com/iambandirakesh/react-anydoc-viewer/pull/1)
+and the [floating chrome change](https://github.com/iambandirakesh/react-anydoc-viewer/commit/b1bd3c1edc1a6eba50c8838b9a154e715b8c68fc).
+
+### Changed
+
+- Viewer controls float in a single pill, with a click-open zoom/fit menu, leaving
+  more space for the document.
+- Package verification checks the zoom menu in the published bundle.
+
+## [0.1.0] — 2026-10-14
 
 First public release. A free, watermark-free React viewer for `.pptx`, `.docx` and
 `.pdf` files that parses and renders everything locally in the browser.
@@ -292,3 +401,13 @@ so no consumer is left on the wrong side of that change.
   explanation; it now becomes a labelled placeholder and reports `picture.decode`.
 - Percentage line spacing in the test fixtures was written in the wrong unit
   (`spcPct` is thousandths of a percent).
+
+[Unreleased]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/v0.1.3...v0.2.0
+[0.1.3]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/36f7427fe551bf2deb2cd924438084db566fc57a...v0.1.2
+[0.1.1]: https://github.com/iambandirakesh/react-anydoc-viewer/compare/v0.1.0...36f7427fe551bf2deb2cd924438084db566fc57a
+[0.1.0]: https://github.com/iambandirakesh/react-anydoc-viewer/releases/tag/v0.1.0
