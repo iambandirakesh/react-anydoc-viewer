@@ -3,16 +3,15 @@
  *
  * Everything the viewer accepts (File, Blob, ArrayBuffer, Uint8Array, URL or a
  * string URL) funnels through here, so the viewer component only ever deals with
- * either a parsed presentation or a normalised {@link DocumentViewerError}.
+ * either a parsed document or a normalised {@link DocumentViewerError}.
  */
 
 import { DocumentViewerError, isAbortError } from "../errors";
-import { ArchiveError, readArchive, type ArchiveLimits } from "./archive";
+import { ArchiveError, type ArchiveLimits } from "./archive";
 import { XmlError } from "./xml";
-import { parsePresentationArchive, type ParsedPresentation } from "./presentation";
 import type { PdfJsLoader } from "./pdf";
 import type { PlainTextKind } from "./plaintext/classify";
-import type { ParagraphMeasurer } from "./docx/model";
+import type { MeasurerHandle, ParagraphMeasurer } from "./docx/model";
 
 export type ViewerSource = File | Blob | ArrayBuffer | Uint8Array | string | URL;
 
@@ -30,6 +29,8 @@ export interface LoadOptions {
   loadPdfJs?: PdfJsLoader;
   /** overrides DOCX text measurement (tests) */
   measureParagraph?: ParagraphMeasurer;
+  /** builds the DOCX paragraph measurer (see `DocumentParseOptions`) */
+  createParagraphMeasurer?: () => MeasurerHandle;
   /** how to read an ambiguous text file (see `DocumentParseOptions.contentHint`) */
   contentHint?: PlainTextKind;
 }
@@ -112,7 +113,7 @@ async function bytesFromUrl(url: string, options: LoadOptions): Promise<Uint8Arr
   return new Uint8Array(buffer);
 }
 
-export async function loadPresentationBytes(
+export async function loadSourceBytes(
   source: ViewerSource,
   options: LoadOptions = {},
 ): Promise<Uint8Array> {
@@ -182,32 +183,4 @@ export function normalizeError(error: unknown): DocumentViewerError {
     });
   }
   return new DocumentViewerError("UNKNOWN", String(error));
-}
-
-/**
- * Parse bytes into a presentation model (`.pptx` only).
- *
- * Parsing itself is synchronous. The caller should yield to the event loop
- * first (the viewer does) so loading state can paint before the work starts.
- * Formats other than `.pptx` go through `parsePackageBytes`/`parseDocumentBytes`
- * in `document.ts`, which decides the format from the bytes.
- */
-export function parseBytes(
-  bytes: Uint8Array,
-  options: Pick<LoadOptions, "limits" | "maxDiagnostics"> = {},
-): ParsedPresentation {
-  const archive = readArchive(bytes, options.limits ?? {});
-  return parsePresentationArchive(archive, {
-    limits: options.limits,
-    maxDiagnostics: options.maxDiagnostics,
-  });
-}
-
-/** Convenience: source in, parsed presentation out. */
-export async function loadPresentation(
-  source: ViewerSource,
-  options: LoadOptions = {},
-): Promise<ParsedPresentation> {
-  const bytes = await loadPresentationBytes(source, options);
-  return parseBytes(bytes, options);
 }

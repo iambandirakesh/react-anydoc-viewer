@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import type { ThemeData } from "../../model/types";
 import { attr, attrBool, attrNum, child, children, type XmlNode } from "../xml";
-import { rgbaToHex } from "../color";
+import { rgbaToHex } from "../drawingml/color";
 
 const THEME_ORDER = ["lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"];
 const INDEXED = ["000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF",

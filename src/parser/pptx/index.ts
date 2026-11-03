@@ -1,7 +1,7 @@
 /**
  * Presentation orchestration.
  *
- * Turns an OPC package into a fully resolved {@link PresentationModel}:
+ * Turns an OPC package into a fully resolved {@link DocumentModel}:
  * slide order from `p:sldIdLst`, inheritance from layout -> master -> theme,
  * background resolution, and per-slide diagnostics.
  *
@@ -15,18 +15,18 @@ import type {
   Fill,
   LvlStyle,
   Placeholder,
-  PresentationModel,
+  DocumentModel,
   RGBA,
   ShapeNodeUnion,
-  SlideModel,
+  PageModel,
   TextStyles,
   ThemeData,
   Transform,
-} from "../model/types";
+} from "../../model/types";
 import {
   createMediaStore,
   type MediaStore,
-} from "./media";
+} from "../media";
 import {
   contentTypeFor,
   parseContentTypes,
@@ -35,42 +35,42 @@ import {
   type Archive,
   type ArchiveLimits,
   type ImageKind,
-} from "./archive";
+} from "../archive";
 import {
   attr,
   child,
   children,
   parseXml,
   type XmlNode,
-} from "./xml";
-import { emuToPx } from "./units";
+} from "../xml";
+import { emuToPx } from "../units";
 import {
   findAllRelationships,
   findOfficeDocumentPart,
   findRelationship,
   relationshipsFor,
-} from "./relationships";
+} from "../relationships";
 import {
   DEFAULT_COLOR_MAP,
   createEmptyTheme,
   parseColorMap,
   parseTheme,
   resolveBackgroundRef,
-} from "./theme";
+} from "../drawingml/theme";
 import {
   accentPalette,
   parseFillFromProps,
   parseTransform,
   type DrawingContext,
   type RelTarget,
-} from "./drawing";
-import { parseLevelStyles, type TextBody, type TextContext } from "./text";
-import { parseShapeTree, type PartResolver } from "./shapes";
-import { parseChart, type ChartParseContext } from "./chart";
-import { resolveColorElement } from "./color";
-import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "./diagnostics";
-import { DocumentViewerError } from "../errors";
-import type { ChartData } from "../model/types";
+} from "../drawingml/drawing";
+import { parseLevelStyles, type TextBody, type TextContext } from "../drawingml/text";
+import { parseShapeTree, type PartResolver } from "../drawingml/shapes";
+import { parseChart, type ChartParseContext } from "../drawingml/chart";
+import { resolveColorElement } from "../drawingml/color";
+import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "../diagnostics";
+import { DocumentViewerError } from "../../errors";
+import type { ChartData } from "../../model/types";
 
 const EMU_PER_INCH = 914_400;
 const DEFAULT_SLIDE_WIDTH = 9_144_000; // 10in, 4:3
@@ -83,7 +83,7 @@ export interface ParseOptions {
 }
 
 export interface ParsedPresentation {
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
   dispose(): void;
 }
@@ -587,7 +587,7 @@ class PresentationParser {
       );
     }
 
-    const slides: SlideModel[] = [];
+    const slides: PageModel[] = [];
     for (let index = 0; index < slideParts.length; index += 1) {
       const entry = slideParts[index]!;
       slides.push(this.parseSlide(entry.part, index, entry.hidden));
@@ -596,7 +596,7 @@ class PresentationParser {
     const firstMaster = this.masterForSlide(slideParts[0]!.part);
     const theme = firstMaster?.theme ?? createEmptyTheme();
 
-    const model: PresentationModel = {
+    const model: DocumentModel = {
       width,
       height,
       slides,
@@ -640,7 +640,7 @@ class PresentationParser {
     }
   }
 
-  private parseSlide(slidePart: string, index: number, hidden: boolean): SlideModel {
+  private parseSlide(slidePart: string, index: number, hidden: boolean): PageModel {
     const mark = this.diagnostics.mark();
     const root = this.safeParse(slidePart);
     const cSld = child(root, "cSld");
@@ -741,11 +741,11 @@ export function parsePresentationBytes(
 
 /* --------------------------------------------------------------- utilities */
 
-export function slideSizeInches(model: PresentationModel): { width: number; height: number } {
+export function slideSizeInches(model: DocumentModel): { width: number; height: number } {
   return { width: model.width / EMU_PER_INCH, height: model.height / EMU_PER_INCH };
 }
 
-export function slideSizePx(model: PresentationModel, pixelsPerInch = 96): { width: number; height: number } {
+export function slideSizePx(model: DocumentModel, pixelsPerInch = 96): { width: number; height: number } {
   const inches = slideSizeInches(model);
   return {
     width: Math.round(inches.width * pixelsPerInch),
@@ -753,7 +753,7 @@ export function slideSizePx(model: PresentationModel, pixelsPerInch = 96): { wid
   };
 }
 
-export function hasSlideText(model: PresentationModel, index: number): boolean {
+export function hasSlideText(model: DocumentModel, index: number): boolean {
   const slide = model.slides[index];
   if (!slide) return false;
   for (const shape of slide.shapes) {

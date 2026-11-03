@@ -1,4 +1,4 @@
-import type { ViewerLabels } from "../types/public";
+import type { ViewerLabels } from "./types/public";
 
 export const DEFAULT_LABELS: ViewerLabels = {
   previous: "Previous slide",

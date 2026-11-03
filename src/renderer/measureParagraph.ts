@@ -9,21 +9,15 @@
  * away again.
  *
  * Where no layout engine exists — server rendering, a unit test — no height can
- * be measured at all, and the estimator is used instead. It is deliberately
- * crude, but it keeps pagination monotonic and readable instead of collapsing a
- * ten-page document onto one overflowing page.
+ * be measured at all, and the parser's estimator (`parser/docx/measure.ts`) is
+ * used instead. This module lives with the renderer because it needs the
+ * renderer's styles; the viewer injects it into the parser through the parse
+ * options, so the parser itself never reaches for the DOM.
  */
 
-import type { DocxParagraphBlock, ParagraphMeasurer } from "../parser/docx/model";
-import { DEFAULT_DOCX_FONT_SIZE } from "../parser/docx/model";
+import type { DocxParagraphBlock, MeasurerHandle } from "../parser/docx/model";
+import { createEstimateMeasurer } from "../parser/docx/measure";
 import { baseSizeOf, paragraphStyleFor, runStyleFor, textContainerStyle } from "./textStyles";
-
-export interface MeasurerHandle {
-  measure: ParagraphMeasurer;
-  dispose(): void;
-  /** which strategy is in use, so the parser can say so in the diagnostics */
-  kind: "layout" | "estimate";
-}
 
 /**
  * Paragraphs laid out per pass. A document is measured in slices this size so a
@@ -36,46 +30,6 @@ const MEASURE_PASS_LIMIT = 4000;
 const CALIBRATION_FONT_PX = 100;
 const CALIBRATION_MIN = 40;
 const CALIBRATION_MAX = 400;
-
-/**
- * Estimate how many lines the paragraph needs, then multiply by the line height.
- * Character widths are approximated from the font size, which is why this is the
- * fallback and not the primary path.
- */
-export function estimateParagraphHeight(block: DocxParagraphBlock, widthPx: number): number {
-  const body = block.text;
-  const paragraph = body.paragraphs[0];
-  if (!paragraph) return 0;
-  const baseSize = baseSizeOf(body) || DEFAULT_DOCX_FONT_SIZE;
-
-  let lineUnits = 0;
-  let breaks = 0;
-  let widestRun = 0;
-  for (const run of paragraph.runs) {
-    if (run.br) {
-      breaks += 1;
-      lineUnits = 0;
-      continue;
-    }
-    const size = run.props.size ?? baseSize;
-    const perCharacter = size * (run.props.bold ? 0.55 : 0.5);
-    lineUnits += run.text.length * perCharacter;
-    widestRun = Math.max(widestRun, perCharacter);
-  }
-
-  const available = Math.max(widthPx, widestRun, 1);
-  const lines = Math.max(1, breaks + 1 + Math.max(0, Math.ceil(lineUnits / available) - 1));
-
-  const spacing = paragraph.props.lineSpacing;
-  const lineHeight =
-    spacing?.type === "pct"
-      ? baseSize * 1.2 * spacing.value
-      : spacing?.type === "pt"
-        ? spacing.value
-        : baseSize * 1.35;
-
-  return lines * lineHeight + (paragraph.props.spaceBefore ?? 0) + (paragraph.props.spaceAfter ?? 0);
-}
 
 /**
  * A measurer backed by real layout, or `null` when the environment cannot lay
@@ -192,5 +146,5 @@ export function createDomMeasurer(): MeasurerHandle | null {
 
 /** The measurer used for a document: real layout when possible, estimates otherwise. */
 export function createParagraphMeasurer(): MeasurerHandle {
-  return createDomMeasurer() ?? { measure: estimateParagraphHeight, dispose: () => undefined, kind: "estimate" };
+  return createDomMeasurer() ?? createEstimateMeasurer();
 }

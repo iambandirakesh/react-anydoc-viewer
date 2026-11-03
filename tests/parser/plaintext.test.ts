@@ -152,7 +152,7 @@ describe("text documents", () => {
     expect(parsed.model.slides).toHaveLength(1);
     // A page is a whole sheet of paper, not the size of the text on it.
     expect(parsed.model.width).toBe(Math.round(816 * 9525));
-    expect(parsed.renderPage).toBeTypeOf("function");
+    expect(parsed.content.kind).toBe("text");
     parsed.dispose();
   });
 
@@ -211,7 +211,7 @@ describe("text documents", () => {
   it("loads through the document entry point with the format from the bytes", async () => {
     const csv = await loadDocument(bytes("a,b\n1,2\n3,4\n"));
     expect(csv.format).toBe("csv");
-    expect(csv.renderPage).toBeTypeOf("function");
+    expect(csv.content?.kind).toBe("sheet");
     csv.dispose();
 
     const text = await loadDocument(bytes("just a note\n"));

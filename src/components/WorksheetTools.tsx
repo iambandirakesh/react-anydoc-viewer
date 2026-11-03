@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import type { SheetPageData } from "../parser/xlsx/model";
-import { findSheetMatches, sheetCsv, selectionText, type SheetMatch } from "./worksheetUtils";
+import { findSheetMatches, sheetCsv, selectionText, type SheetMatch } from "../utils/worksheet";
 import { columnLabel } from "./SheetPage";
 
 export function WorksheetTools({ pages, index, navigate, fitWidth, root }: { pages: readonly SheetPageData[]; index: number; navigate: (index: number) => void; fitWidth: () => void; root: RefObject<HTMLDivElement | null> }) {

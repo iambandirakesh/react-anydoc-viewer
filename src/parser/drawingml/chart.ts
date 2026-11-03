@@ -6,9 +6,9 @@
  * never needs to evaluate a spreadsheet formula from the embedded workbook.
  */
 
-import type { ChartData, ChartSeries, Fill, LineStyle, RGBA } from "../model/types";
-import { attr, attrBool, attrNum, child, children, find, findAll, type XmlNode } from "./xml";
-import { clamp } from "./units";
+import type { ChartData, ChartSeries, Fill, LineStyle, RGBA } from "../../model/types";
+import { attr, attrBool, attrNum, child, children, find, findAll, type XmlNode } from "../xml";
+import { clamp } from "../units";
 import { isColorElement, resolveColorElement } from "./color";
 import { parseFill, parseLine, type DrawingContext } from "./drawing";
 import { parseTextBody, textBodyPlainText, type TextContext } from "./text";

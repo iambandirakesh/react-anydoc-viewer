@@ -8,7 +8,7 @@
  */
 
 import type { CSSProperties, ReactNode } from "react";
-import type { SlideModel } from "../model/types";
+import type { PageModel } from "../model/types";
 import type { MediaStore } from "../parser/media";
 import { cssBackground } from "./style";
 import { createLinkBuilder, ShapeNodeView, type ShapeRenderContext } from "./RenderShape";
@@ -27,7 +27,7 @@ export const DEFAULT_CHART_PALETTE = [
 ];
 
 export interface SlideViewProps {
-  slide: SlideModel;
+  slide: PageModel;
   media: MediaStore;
   /** natural slide size in CSS px (unscaled) */
   width: number;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Diagnostic, PresentationModel } from "../model/types";
+import type { Diagnostic, DocumentModel } from "../model/types";
 import type { MediaStore } from "../parser/media";
 import { DocumentViewerError, type DocumentFormat } from "../errors";
 import {
@@ -7,45 +7,51 @@ import {
   normalizeError,
   type LoadOptions,
   type ViewerSource,
-} from "../parser/loadPresentation";
+} from "../parser/source";
 import { loadDocument } from "../parser/document";
+import type { PageContent } from "../parser/pageContent";
 import type { PageRenderer } from "../renderer/pageRenderer";
+import { createParagraphMeasurer } from "../renderer/measureParagraph";
+import { createPageRenderer } from "../components/pageRenderers";
 
-export type PresentationStatus = "idle" | "loading" | "ready" | "error";
+export type DocumentStatus = "idle" | "loading" | "ready" | "error";
 
-export interface PresentationState {
-  status: PresentationStatus;
-  model: PresentationModel | null;
+export interface DocumentState {
+  status: DocumentStatus;
+  model: DocumentModel | null;
   media: MediaStore | null;
   error: DocumentViewerError | null;
   diagnostics: Diagnostic[];
   /** what the loaded bytes turned out to be */
   format: DocumentFormat | null;
-  /** set when the format draws its pages itself instead of using shapes (PDF) */
+  /** set when the format draws its pages itself instead of using shapes (PDF, images, text, sheets) */
+  content: PageContent | null;
+  /** the renderer built from `content` */
   renderPage: PageRenderer | null;
   /** increments once per successful load */
   loadId: number;
 }
 
-export interface UsePresentationOptions extends LoadOptions {
+export interface UseDocumentOptions extends LoadOptions {
   /** called with the parsed model and its format; the viewer maps this to public info */
-  onLoad?: (model: PresentationModel, format: DocumentFormat) => void;
+  onLoad?: (model: DocumentModel, format: DocumentFormat) => void;
   onError?: (error: DocumentViewerError) => void;
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
 }
 
-export interface UsePresentationResult extends PresentationState {
+export interface UseDocumentResult extends DocumentState {
   /** re-fetch and re-parse the current source */
   reload: () => void;
 }
 
-const EMPTY: Omit<PresentationState, "loadId"> = {
+const EMPTY: Omit<DocumentState, "loadId"> = {
   status: "idle",
   model: null,
   media: null,
   error: null,
   diagnostics: [],
   format: null,
+  content: null,
   renderPage: null,
 };
 
@@ -57,11 +63,11 @@ const EMPTY: Omit<PresentationState, "loadId"> = {
  * started. Object URLs live in a ref and are revoked from effects (never from a
  * state updater, which React may invoke more than once).
  */
-export function usePresentation(
+export function useDocument(
   source: ViewerSource | null | undefined,
-  options: UsePresentationOptions = {},
-): UsePresentationResult {
-  const [state, setState] = useState<PresentationState>({ ...EMPTY, loadId: 0 });
+  options: UseDocumentOptions = {},
+): UseDocumentResult {
+  const [state, setState] = useState<DocumentState>({ ...EMPTY, loadId: 0 });
   const [reloadToken, setReloadToken] = useState(0);
 
   const generation = useRef(0);
@@ -108,6 +114,7 @@ export function usePresentation(
         // synchronous parsers resolve on the next microtask, which is also what
         // lets the loading state paint before the work starts.
         const parsed = await loadDocument(source, {
+          createParagraphMeasurer,
           ...optionsRef.current,
           signal: controller.signal,
         });
@@ -123,7 +130,8 @@ export function usePresentation(
           error: null,
           diagnostics: parsed.model.diagnostics,
           format: parsed.format,
-          renderPage: parsed.renderPage ?? null,
+          content: parsed.content ?? null,
+          renderPage: parsed.content ? createPageRenderer(parsed.content) : null,
           loadId: previous.loadId + 1,
         }));
         optionsRef.current.onLoad?.(parsed.model, parsed.format);

@@ -19,7 +19,7 @@
  * from file content.
  */
 
-import type { PresentationModel, SlideModel } from "../model/types";
+import type { DocumentModel, PageModel } from "../model/types";
 import { DocumentViewerError } from "../errors";
 import {
   isBrowserRenderable,
@@ -29,13 +29,11 @@ import {
   type ImageKind,
 } from "./archive";
 import { createEmptyMediaStore, createByteUrl, type MediaStore } from "./media";
-import { DEFAULT_COLOR_MAP, createEmptyTheme } from "./theme";
+import { DEFAULT_COLOR_MAP, createEmptyTheme } from "./drawingml/theme";
 import { pxToEmu } from "./units";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "./diagnostics";
-import { createImagePageRenderer } from "../components/ImagePage";
-import { createTiffPageRenderer } from "../components/TiffPage";
+import type { PageContent } from "./pageContent";
 import { readTiffPages } from "./tiff";
-import type { PageRenderer } from "../renderer/pageRenderer";
 
 export interface ImageInfo {
   kind: ImageKind;
@@ -46,9 +44,9 @@ export interface ImageInfo {
 
 export interface ParsedImage {
   format: "image";
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
-  renderPage: PageRenderer;
+  content: PageContent;
   dispose(): void;
 }
 
@@ -248,7 +246,7 @@ export function unsupportedImageMessage(kind: ImageKind): string {
  * Build a one-page-per-directory model for a TIFF.
  *
  * Browsers cannot draw TIFF through an `<img>`, so each directory becomes a page
- * drawn by {@link createTiffPageRenderer}. The first page defines the document's
+ * drawn by the TIFF page renderer. The first page defines the document's
  * page box; a later page with a different size is fitted into it rather than
  * changing the geometry of the pages around it.
  */
@@ -281,7 +279,7 @@ function parseTiffDocument(bytes: Uint8Array, diagnostics: Diagnostics, info: Im
     });
   }
 
-  const slides: SlideModel[] = pages.map((_, index) => ({
+  const slides: PageModel[] = pages.map((_, index) => ({
     index,
     partName: `tiff#page${index + 1}`,
     name: pages.length > 1 ? `Page ${index + 1}` : null,
@@ -292,7 +290,7 @@ function parseTiffDocument(bytes: Uint8Array, diagnostics: Diagnostics, info: Im
     diagnostics: [],
   }));
 
-  const model: PresentationModel = {
+  const model: DocumentModel = {
     width: pxToEmu(width),
     height: pxToEmu(height),
     slides,
@@ -310,7 +308,7 @@ function parseTiffDocument(bytes: Uint8Array, diagnostics: Diagnostics, info: Im
     format: "image",
     model,
     media,
-    renderPage: createTiffPageRenderer(bytes),
+    content: { kind: "tiff", bytes },
     dispose: () => media.dispose(),
   };
 }
@@ -355,7 +353,7 @@ export function parseImageDocument(bytes: Uint8Array, options: { maxDiagnostics?
   const width = info.width ?? DEFAULT_SIZE.width;
   const height = info.height ?? DEFAULT_SIZE.height;
 
-  const page: SlideModel = {
+  const page: PageModel = {
     index: 0,
     partName: "image#1",
     name: null,
@@ -367,7 +365,7 @@ export function parseImageDocument(bytes: Uint8Array, options: { maxDiagnostics?
     diagnostics: [],
   };
 
-  const model: PresentationModel = {
+  const model: DocumentModel = {
     width: pxToEmu(width),
     height: pxToEmu(height),
     slides: [page],
@@ -381,13 +379,13 @@ export function parseImageDocument(bytes: Uint8Array, options: { maxDiagnostics?
   };
 
   const media = createEmptyMediaStore();
-  const renderPage = createImagePageRenderer({ src: stored.url, label: `${width} × ${height}` });
+  const content: PageContent = { kind: "image", src: stored.url, label: `${width} × ${height}` };
 
   return {
     format: "image",
     model,
     media,
-    renderPage,
+    content,
     dispose: () => {
       media.dispose();
       stored.revoke();

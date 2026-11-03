@@ -109,7 +109,7 @@ export function App() {
       showControls
       showThumbnails
       fit="width"
-      onLoad={(info) => console.log(info.slideCount, "slides")}
+      onLoad={(info) => console.log(info.pageCount, "pages")}
       onError={(error) => console.error(error.code, error.message)}
       onSlideChange={(index) => console.log("slide", index)}
     />
@@ -578,7 +578,7 @@ A `.docx` is not a page of shapes, so the viewer parses WordprocessingML itself
 parts) exactly as it parses PresentationML, then **paginates the document in the
 browser** and hands each page to the same renderer a slide uses. Navigation,
 thumbnails, zoom, fit modes and presentation mode therefore work unchanged, and
-`slideCount` is the page count.
+`pageCount` (formerly `slideCount`) is the page count.
 
 | Supported | Notes |
 | --- | --- |
@@ -797,7 +797,7 @@ These are fixture-specific results, not fresh measurements of the current releas
 | `.pdf` | 600 pages, 1.4 MB | **0.42 s** |
 
 These timings do not predict arbitrary files, image decode completion or PDF raster
-completion. See [PERFORMANCE_REVIEW.md](PERFORMANCE_REVIEW.md) for the dated
+completion. See [docs/PERFORMANCE_REVIEW.md](docs/PERFORMANCE_REVIEW.md) for the dated
 production benchmark, definitions and outstanding optimizations. The review does
 not benchmark the XLSX/CSV worksheet view added in 0.2.3.
 

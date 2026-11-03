@@ -17,7 +17,7 @@ import { createEmptyMediaStore } from "../../src/parser/media";
 import type { PageRenderer } from "../../src/renderer/pageRenderer";
 import { DocumentViewer } from "../../src/components/DocumentViewer";
 import { SlideCanvas } from "../../src/components/SlideCanvas";
-import { mergeLabels } from "../../src/components/labels";
+import { mergeLabels } from "../../src/labels";
 import { setZeroSize } from "../setup";
 import type { DocumentViewerHandle } from "../../src/types/public";
 
@@ -488,6 +488,7 @@ describe("DocumentViewer", () => {
     await waitForReady(container);
     expect(onLoad).toHaveBeenCalledTimes(1);
     const info = onLoad.mock.calls[0]?.[0];
+    expect(info.pageCount).toBe(2);
     expect(info.slideCount).toBe(2);
     expect(info.widthEmu).toBe(12_192_000);
     expect(info.aspectRatio).toBeCloseTo(12_192_000 / 6_858_000, 5);
@@ -539,7 +540,7 @@ describe("DocumentViewer", () => {
 
   it("contains a slide render failure and reports it instead of going blank", async () => {
     const parsedBytes = deckWithImage();
-    const { parsePresentationBytes } = await import("../../src/parser/presentation");
+    const { parsePresentationBytes } = await import("../../src/parser/pptx");
     const parsed = parsePresentationBytes(parsedBytes);
     const slide = parsed.model.slides[0]!;
 
@@ -634,6 +635,31 @@ describe("DocumentViewer", () => {
     expect(container.querySelector(".radv-root")).not.toBeNull();
     unmount();
     expect(revoke).toHaveBeenCalled();
+  });
+
+  it("reports the page a new document opens on", async () => {
+    const threeSlides = buildPptx({
+      slides: ["One", "Two", "Three"].map((text, index) => ({
+        part: `ppt/slides/slide${index + 1}.xml`,
+        shapes: sp({ ph: "title", text: paragraph({ runs: run({ text: `Deck A ${text}` }) }) }),
+      })),
+    });
+    const ref = createRef<DocumentViewerHandle>();
+    const onSlideChange = vi.fn();
+    const { container, rerender } = render(
+      <DocumentViewer ref={ref} source={threeSlides} onSlideChange={onSlideChange} />,
+    );
+    await waitForReady(container);
+    act(() => ref.current?.last());
+    await waitFor(() => expect(canvasOf(container).getByText("Deck A Three")).toBeTruthy());
+    expect(onSlideChange).toHaveBeenLastCalledWith(2);
+
+    // A shorter document opens on its first page, and the host hears about it
+    // instead of being left with the clamped index of the previous document.
+    rerender(<DocumentViewer ref={ref} source={twoSlides()} onSlideChange={onSlideChange} />);
+    await waitFor(() => expect(canvasOf(container).getByText("Slide one")).toBeTruthy());
+    expect(ref.current?.getCurrentSlide()).toBe(0);
+    expect(onSlideChange).toHaveBeenLastCalledWith(0);
   });
 
   it("respects a controlled slide index", async () => {

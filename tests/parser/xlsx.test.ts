@@ -5,7 +5,8 @@ import { detectFormat, parseDocumentBytes, parsePackageBytes } from "../../src/p
 import { readArchive } from "../../src/parser/archive";
 import { parseXlsxArchive } from "../../src/parser/xlsx";
 import { formatSerialDate } from "../../src/parser/xlsx/styles";
-import { mergeLabels } from "../../src/components/labels";
+import { mergeLabels } from "../../src/labels";
+import { createPageRenderer } from "../../src/components/pageRenderers";
 import { buildXlsx } from "../fixtures/xlsx";
 
 const workbook = buildXlsx({
@@ -36,7 +37,7 @@ const workbook = buildXlsx({
 
 function pageMarkup(parsed: ReturnType<typeof parseXlsxArchive>, pageIndex: number): string {
   const page = parsed.model.slides[pageIndex]!;
-  const element = parsed.renderPage({
+  const element = createPageRenderer(parsed.content)({
     page,
     width: 1056,
     height: 816,
@@ -55,7 +56,7 @@ describe("XLSX", () => {
 
     const parsed = parsePackageBytes(workbook);
     expect(parsed.format).toBe("xlsx");
-    expect(parsed.renderPage).toBeTypeOf("function");
+    expect(parsed.content?.kind).toBe("sheet");
     expect(parsed.model.slides).toHaveLength(2);
     expect(parsed.model.slides.map((slide) => slide.name)).toEqual(["Summary", "Second Sheet"]);
     expect(parsed.model.title).toBe("Quarterly numbers");
@@ -133,7 +134,7 @@ describe("XLSX", () => {
     expect(detectFormat(workbook)).toBe("xlsx");
     const parsed = await parseDocumentBytes(workbook);
     expect(parsed.format).toBe("xlsx");
-    expect(parsed.renderPage).toBeTypeOf("function");
+    expect(parsed.content?.kind).toBe("sheet");
     parsed.dispose();
   });
 

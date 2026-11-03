@@ -14,7 +14,7 @@
  * pagination agree.
  */
 
-import type { PictureNode, ShapeNode, ShapeNodeUnion, SlideModel, TableNode } from "../../model/types";
+import type { PictureNode, ShapeNode, ShapeNodeUnion, PageModel, TableNode } from "../../model/types";
 import { EMU_PER_PX, emuToPx } from "../units";
 import type { DocxBlock, DocxImageBlock, DocxParagraphBlock, ParagraphMeasurer } from "./model";
 
@@ -35,7 +35,7 @@ export interface LayoutOptions {
 }
 
 export interface LayoutResult {
-  pages: SlideModel[];
+  pages: PageModel[];
   /** paragraphs taller than a page's content area (they are clipped) */
   overflowed: number;
 }
@@ -165,7 +165,7 @@ export function layoutDocument(blocks: DocxBlock[], options: LayoutOptions): Lay
 
   /* ---------------------------------------------------------------- shapes */
 
-  const pages: SlideModel[] = [];
+  const pages: PageModel[] = [];
   let overflowed = 0;
 
   pageIndexes.forEach((indexes, pageIndex) => {

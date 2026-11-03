@@ -4,7 +4,7 @@ How `react-anydoc-viewer` turns presentations, documents, workbooks, PDFs, image
 CSV/TSV tables and text files into pixels. This describes the implementation through
 0.2.3, including the worksheet view introduced after the original architecture
 selection. Historical proposals are kept separately in
-[FORMAT-EXPANSION.md](FORMAT-EXPANSION.md).
+[docs/FORMAT-EXPANSION.md](docs/FORMAT-EXPANSION.md).
 
 The package was called `react-pptx-viewer` when presentations were all it opened.
 The name is now format-neutral, and so is the public API — `DocumentViewer`,
@@ -80,8 +80,8 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
         ▼
   format             magic bytes → pdf | zip | ole | image | text; ZIP parts → pptx | docx | xlsx
         │
-        ├─ raster ──────▶ image     header geometry + image or TIFF page renderer
-        ├─ pdf ─────────▶ pdf       pdf.js document + a page renderer
+        ├─ raster ──────▶ image     header geometry + image or TIFF page content
+        ├─ pdf ─────────▶ pdf       pdf.js document as page content
         ├─ text ────────▶ plaintext CSV → one worksheet; other text → pages
         │
         ▼ (zip)
@@ -90,12 +90,14 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
         ▼
   relationships      .rels graph, r:id → target resolution, external vs internal
         │
-        ├─ pptx ────────▶ presentation   theme → master → layout → slides, media
+        ├─ pptx ────────▶ pptx   theme → master → layout → slides, media
         ├─ docx ────────▶ docx   styles → numbering → blocks → measure → pages
         └─ xlsx ────────▶ xlsx   shared strings → styles → worksheets + drawings
         │
         ▼
-  PresentationModel  plain data, no XML, no DOM
+  DocumentModel      plain data, no XML, no DOM
+  + PageContent      for self-drawn pages: plain data, mapped to a renderer by
+                     components/pageRenderers.tsx
         │
         ▼
   React components   DocumentViewer → SlideCanvas → SlideView → RenderShape/RenderText/…
@@ -104,9 +106,12 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
                      … or worksheet tabs/tools → SheetPage (XLSX and CSV)
 ```
 
-The boundary that matters is the `PresentationModel`: the parsers produce plain
+The boundary that matters is the `DocumentModel`: the parsers produce plain
 typed objects and the renderer consumes them, so the two halves are testable in
-isolation (the whole parser suite runs without a DOM) and the renderer never needs
+isolation (the whole parser suite runs without a DOM). The dependency only points
+one way: nothing under `src/parser` imports from `src/renderer`, `src/components`
+or `src/hooks`. The one piece of parsing that needs the DOM — measuring DOCX
+paragraph heights — is injected through the parse options by the viewer and the renderer never needs
 to know about XML namespaces, ZIP entries or relationship ids. That boundary is what
 made the second and third formats cheap: a page of a Word document is a slide whose
 shapes are paragraphs, tables and pictures, so navigation, zoom, thumbnails,
@@ -116,11 +121,13 @@ Shared parsing/rendering seams keep most format-specific work contained:
 
 - **`probePackage(names)`** decides *which* parser runs, from part names only — no
   extension, MIME type or file name is consulted anywhere in the pipeline.
-- **`PageRenderer`** (see `src/renderer/pageRenderer.ts`) lets a format draw a page
-  itself instead of supplying shapes. `SlideCanvas` and `ThumbnailSidebar` call it
-  for paginated formats. XLSX/CSV renderers also expose `worksheetPages`, allowing
-  `DocumentViewer` to use bottom tabs, internal scrolling and `WorksheetTools`
-  instead. Raster renderers receive the display scale to size their canvases.
+- **`PageContent`** (see `src/parser/pageContent.ts`) lets a format describe pages
+  it draws itself instead of supplying shapes — a pdf.js document, TIFF bytes, an
+  image URL, text pages or worksheets. `components/pageRenderers.tsx` maps each
+  kind to a **`PageRenderer`** (`src/renderer/pageRenderer.ts`), which
+  `SlideCanvas` and `ThumbnailSidebar` call for paginated formats. Sheet content
+  (XLSX/CSV) makes `DocumentViewer` use `WorkbookView` — bottom tabs, internal
+  scrolling and `WorksheetTools` — instead. Raster renderers receive the display scale to size their canvases.
   The context also carries the viewer's labels, so a renderer that wanted an
   accessible name of its own would not hard-code English.
 
@@ -137,27 +144,24 @@ frame to reason about.
 
 | Module | Responsibility |
 | --- | --- |
-| `document.ts` | The single entry point every source funnels through: sniff the container, dispatch to the right parser, return `{ format, model, media, renderPage?, dispose }`. |
+| `document.ts` | The single entry point every source funnels through: sniff the container, dispatch to the right parser, return `{ format, model, media, content?, dispose }`. |
 | `format.ts` | Magic-byte container detection (`%PDF-`, OLE/CFB, ZIP) and package-kind detection from part names, plus the wording of the "this is an `.xlsb`, not a document" errors. |
 | `archive.ts` | Reads the ZIP central directory with `fflate`, enforces every limit, rejects unsafe entry names, sniffs image formats from magic bytes. Inflates lazily and only for the parts the renderer needs. |
 | `relationships.ts` | Parses `.rels` parts and resolves ids relative to the source part, including `../` targets and `TargetMode="External"`. |
 | `xml.ts` | Wraps `fast-xml-parser` in `preserveOrder` mode so element order (z-order, run order, `mc:AlternateContent`) survives; drops the XML declaration; rejects DOCTYPE/ENTITY. |
-| `theme.ts`, `color.ts` | Theme colour scheme plus font scheme, and the `clrMap` indirection (`tx1` → `dk1` → `sysClr windowText`). Colour modifiers (`lumMod`, `tint`, `shade`, `alpha`, `satMod`, …) are applied numerically. |
-| `drawing.ts` | The DrawingML vocabulary shared by shapes, theme and charts: transforms, fills, lines, shadows, geometry, adjustment values. |
-| `geometry.ts` | 108 named presets plus `custGeom`, emitted as SVG path commands with a `fillRule`. |
-| `text.ts` | Body properties (anchor, insets, autofit, wrap), paragraph properties, level styles, runs, bullets and numbering. |
-| `shapes.ts` | The shape-tree walker: `p:sp`, `p:pic`, `p:graphicFrame`, `p:grpSp`, `p:cxnSp`, `mc:AlternateContent`, with group coordinate-space mapping and placeholder inheritance. |
-| `table.ts`, `chart.ts` | Table grids (merges, per-edge borders) and chart families read from cached plot data. |
+| `drawingml/` | The DrawingML vocabulary shared by all three OOXML formats (PPTX slides, DOCX pictures, XLSX drawings): `theme.ts`/`color.ts` (theme colour and font schemes, the `clrMap` indirection, numeric colour modifiers), `drawing.ts` (transforms, fills, lines, shadows), `geometry.ts` (108 named presets plus `custGeom` as SVG paths), `text.ts` (body/paragraph/run properties, bullets), `shapes.ts` (the shape-tree walker with group mapping and placeholder inheritance), `table.ts` and `chart.ts`. |
 | `media.ts` | Lazy object URLs (`data:` URLs where object URLs are unavailable), one per media part, revoked on dispose. Shared byte-to-URL helper used by the image adapter. |
 | `ole.ts` | Identifies a compound file from its stream names (`Workbook`, `WordDocument`, `PowerPoint Document`, `EncryptedPackage`), so legacy binary files are reported by name instead of as "encrypted". |
-| `image.ts` | Header-only geometry for PNG/JPEG/GIF/BMP/WebP/SVG, the TIFF path (IFD pages + a canvas renderer), and the one-page model for a standalone image. |
+| `image.ts` | Header-only geometry for PNG/JPEG/GIF/BMP/WebP/SVG, the TIFF path (IFD pages, drawn by `TiffPage`), and the one-page model for a standalone image. |
 | `tiff.ts` | Bounded TIFF directory walking: page count and natural size from the IFD chain, without reading pixels. |
 | `xlsx/` | `index.ts` assembles worksheets/limits; `styles.ts` handles numeric/date formats; `visualStyles.ts` maps fonts/fills/borders/alignment/theme colors; `drawings.ts` resolves anchors and chart/image relationships; `chartReferences.ts` supplies missing chart caches from internal worksheet ranges; `conditionalFormatting.ts` applies supported saved-value rules; `model.ts` defines cell/grid data. |
 | `plaintext/` | The text front-end: `decode.ts` (BOM, UTF-8, UTF-16, Windows-1252 fallback), `classify.ts` (content-based classification and delimiter sniffing), `csv.ts` (quote-aware state machine), `index.ts` (single CSV worksheet or text pages), `paginate.ts` (text wrapping and pagination) and `metrics.ts` (the page geometry and text metrics the page renderers import as well). |
 | `../formats.ts` | The format table: labels, extensions and MIME types, from which `SUPPORTED_EXTENSIONS`, `ACCEPT_ATTRIBUTE` and every "supported formats are …" message are generated. |
-| `presentation.ts` | Assembles everything: slide order from `sldIdLst`, layout/master resolution, inherited shape layers, background resolution, diagnostics. |
-| `docx/` | The whole Word front-end: `styles.ts` (style chain, doc defaults, numbering), `text.ts` (paragraphs → run/picture/page-break blocks), `table.ts`, `drawing.ts` (inline and anchored pictures), `layout.ts` (pagination) and `index.ts` (orchestration). |
-| `pdf.ts` | The pdf.js adapter: loads the engine lazily, reads page count, first-page geometry and metadata into a model, and returns a page renderer. Normalises pdf.js's own errors into the public error model. |
+| `pptx/` | `index.ts` assembles a presentation: slide order from `sldIdLst`, layout/master resolution, inherited shape layers, background resolution, diagnostics. |
+| `docx/` | The whole Word front-end: `styles.ts` (style chain, doc defaults, numbering), `text.ts` (paragraphs → run/picture/page-break blocks), `table.ts`, `drawing.ts` (inline and anchored pictures), `layout.ts` (pagination), `measure.ts` (the DOM-free height estimate) and `index.ts` (orchestration). |
+| `pageContent.ts` | The data a self-drawn format returns instead of shapes, one kind per renderer. |
+| `source.ts` | Normalises every accepted source (File, Blob, buffers, URLs) into bytes, with download limits, and maps any failure into the public error model. |
+| `pdf.ts` | The pdf.js adapter: loads the engine lazily, reads page count, first-page geometry and metadata into a model, and returns the document as page content. Normalises pdf.js's own errors into the public error model. |
 
 Parsing is synchronous after the download for the three OOXML formats and produces
 one immutable model per source; the PDF path is asynchronous because pdf.js is
@@ -175,13 +179,16 @@ without diagnostics as well.
 | `RenderTable.tsx` | Tables as absolutely positioned cells (merges produce the right spans). |
 | `RenderChart.tsx` | Charts redrawn from parsed series data as inline SVG; exact values/hover details, labels, axes and legends. XLSX can synthesize series caches from internal ranges, leaving missing numeric points absent. Crowded category ticks are thinned without dropping points. |
 | `style.ts` | Shared mapping of model values to CSS/SVG (fills, gradients, dash arrays, shadows, ids). |
-| `pageRenderer.ts` | The seam a non-shape format implements: given a page, its natural size, the current scale and a `warn` callback, return a node. Optional worksheet data lets the viewer choose the grid UI. |
+| `pageRenderer.ts` | The seam a non-shape format implements: given a page, its natural size, the current scale and a `warn` callback, return a node. |
+| `../components/pageRenderers.tsx` | Maps each `PageContent` kind to its page renderer; the only place a parser's output meets a component. |
 | `PdfPage.tsx` | The PDF implementation of that seam: sizes a canvas from the scale × device pixel ratio (capped for memory), renders one page with pdf.js, cancels on unmount, and turns a failure into a labelled notice plus a diagnostic. |
 | `TiffPage.tsx` | The TIFF implementation of that seam: imports the decoder on demand, decodes one directory to RGBA, draws it on a canvas, and reports a page it cannot decode. |
 | `SheetPage.tsx` | Shared XLSX/CSV HTML grid: styling, merges, row/column headers, range selection/copy, saved scrolling and drawing overlays. XLSX uses stored heights and text spillover; CSV wraps at capped column widths with content-driven row heights. |
-| `WorksheetTools.tsx`, `worksheetUtils.ts` | Cross-sheet cell search (up to 500 matches), fit-to-width, clipboard copy with a two-second notice, and displayed-range CSV export. Export quotes fields and neutralizes formula-like text. |
-| `measureParagraph.ts` | Measures laid-out text with a hidden mirror DOM (`kind: "layout"`), and falls back to a metrics-based estimate (`kind: "estimate"`) where no DOM is available, for example in SSR or a test environment. |
-| `DocumentViewer.tsx` | Public component: loading state machine, slide/zoom/fit state, keyboard handling, imperative handle, diagnostics, thumbnails, fullscreen. Paginated formats use `SlideCanvas`; XLSX/CSV use a measured worksheet viewport and tabs. It maps the parsed model into `DocumentInfo` and assigns worksheet panel IDs after mount for React 17 SSR compatibility. |
+| `WorksheetTools.tsx`, `../utils/worksheet.ts` | Cross-sheet cell search (up to 500 matches), fit-to-width, clipboard copy with a two-second notice, and displayed-range CSV export. Export quotes fields and neutralizes formula-like text. |
+| `measureParagraph.ts` | Measures laid-out text with a hidden mirror DOM (`kind: "layout"`), and falls back to the parser's metrics-based estimate (`kind: "estimate"`) where no DOM is available, for example in SSR or a test environment. `useDocument` injects it into the DOCX parser. |
+| `DocumentViewer.tsx` | Public component: wires the hooks below together and owns the chrome (toolbar, thumbnails, diagnostics, fullscreen, presentation hint) and the imperative handle. Paginated formats use `SlideCanvas`; XLSX/CSV use `WorkbookView`. It maps the parsed model into `DocumentInfo`. |
+| `WorkbookView.tsx` | The worksheet stage: measured scrolling viewport, sheet tabs, grid zoom buttons and `WorksheetTools`. Assigns worksheet panel IDs after mount for React 17 SSR compatibility. |
+| `../hooks/` | `useDocument` (loading state machine, cancellation, media lifetime), `usePageNavigation` (controlled/uncontrolled page index), `useZoom` (fit modes, zoom ladder), `useRenderIssues` (buffered render diagnostics), `useViewerKeyboard` (focused and slideshow key handling), `usePresentationMode`, `usePresentationHint`, `useFullscreen`, `useElementSize`. |
 | `SlideCanvas.tsx` | Scroll container, measurement, memoised slide view, per-slide error boundary — and the one line that delegates to a format's own page renderer. |
 | `ViewerToolbar.tsx` | The chrome itself: a compact floating pill centred at the bottom of the stage, revealed by `:hover`/`:focus-within` in the stylesheet so it needs no visibility state of its own. Presentation only; every action and every piece of state belongs to `DocumentViewer`. |
 | `ZoomMenu.tsx` | The zoom percentage and its dropdown of zoom stops and fit modes. The percentage and caret are one split button that opens on click or from the keyboard (never on hover), and it only calls back — it never owns the scale. |

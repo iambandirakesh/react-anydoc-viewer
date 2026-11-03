@@ -9,7 +9,33 @@ will be called out under **Changed**.
 
 ## [Unreleased]
 
+### Added
+
+- `DocumentInfo.pageCount`, the format-neutral name for the page count passed to
+  `onLoad`.
+
+### Deprecated
+
+- `DocumentInfo.slideCount`. It still holds the same value as `pageCount`.
+
+### Fixed
+
+- After a new document loaded, `onSlideChange` could report the previous
+  document's clamped page (for example 1) while the viewer showed the first page.
+  It now reports the page the new document actually opens on.
+
 ### Changed
+
+- Internal restructuring; no change to rendering or to the rest of the public
+  API. Parsers no longer import React components: formats that draw their own
+  pages return plain `PageContent` data, which the component layer maps to a page
+  renderer, and the DOM paragraph measurer is injected into the DOCX parser.
+  DrawingML modules shared by PPTX/DOCX/XLSX moved to `src/parser/drawingml/` and
+  the PPTX assembler to `src/parser/pptx/`. Internal types were renamed to match
+  what they hold (`DocumentModel`, `PageModel`, `useDocument`). Navigation, zoom,
+  keyboard handling and the worksheet stage moved out of `DocumentViewer` into
+  their own hooks and `WorkbookView`. Unused `GridPage` and `loadPresentation`
+  code was removed, and planning notes moved to `docs/`.
 
 - Audited all repository Markdown against 0.2.3. Updated worksheet/CSV controls,
   copying and CSV export security, rendering limits, React 17 compatibility,

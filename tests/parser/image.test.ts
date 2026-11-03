@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readImageInfo, parseImageDocument, unsupportedImageMessage } from "../../src/parser/image";
 import { detectFormat, parseDocumentBytes } from "../../src/parser/document";
 import { loadDocument } from "../../src/parser/document";
-import { mergeLabels } from "../../src/components/labels";
+import { mergeLabels } from "../../src/labels";
+import { createPageRenderer } from "../../src/components/pageRenderers";
 
 /* --------------------------------------------------------------- fixtures */
 
@@ -132,7 +133,7 @@ describe("parseImageDocument", () => {
   it("hands the bytes to the browser as an image URL", async () => {
     const parsed = await loadDocument(pngHeader(4, 4));
     expect(parsed.format).toBe("image");
-    const element = parsed.renderPage?.({
+    const element = createPageRenderer(parsed.content!)({
       page: parsed.model.slides[0]!,
       width: 100,
       height: 100,
@@ -149,7 +150,7 @@ describe("parseImageDocument", () => {
   it("is reachable through the async document entry point", async () => {
     const parsed = await parseDocumentBytes(SVG);
     expect(parsed.format).toBe("image");
-    expect(parsed.renderPage).toBeTypeOf("function");
+    expect(parsed.content?.kind).toBe("image");
     parsed.dispose();
   });
 });

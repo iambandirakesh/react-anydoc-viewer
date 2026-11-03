@@ -26,15 +26,14 @@
  * detection rather than by browser version sniffing; see {@link detectPdfEngine}.
  */
 
-import type { PresentationModel, SlideModel } from "../model/types";
+import type { DocumentModel, PageModel } from "../model/types";
 import { DocumentViewerError } from "../errors";
 import type { ArchiveLimits } from "./archive";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "./diagnostics";
 import { createEmptyMediaStore, type MediaStore } from "./media";
-import { DEFAULT_COLOR_MAP, createEmptyTheme } from "./theme";
+import { DEFAULT_COLOR_MAP, createEmptyTheme } from "./drawingml/theme";
 import { EMU_PER_POINT } from "./units";
-import type { PageRenderer } from "../renderer/pageRenderer";
-import { createPdfPageRenderer, type PdfDocumentLike } from "../components/PdfPage";
+import type { PageContent, PdfDocumentLike } from "./pageContent";
 
 interface PdfViewportLike {
   width: number;
@@ -75,9 +74,9 @@ export interface PdfParseOptions {
 }
 
 export interface ParsedPdf {
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
-  renderPage: PageRenderer;
+  content: PageContent;
   dispose(): void;
 }
 
@@ -320,7 +319,7 @@ export async function parsePdfDocument(bytes: Uint8Array, options: PdfParseOptio
     // Metadata is optional; a damaged info dictionary is not an error.
   }
 
-  const slides: SlideModel[] = [];
+  const slides: PageModel[] = [];
   for (let index = 0; index < pageCount; index += 1) {
     slides.push({
       index,
@@ -335,7 +334,7 @@ export async function parsePdfDocument(bytes: Uint8Array, options: PdfParseOptio
     });
   }
 
-  const model: PresentationModel = {
+  const model: DocumentModel = {
     width: geometry.widthEmu,
     height: geometry.heightEmu,
     slides,
@@ -350,12 +349,12 @@ export async function parsePdfDocument(bytes: Uint8Array, options: PdfParseOptio
 
   const media = createEmptyMediaStore();
   // pdf.js's document proxy satisfies the renderer's structural contract.
-  const renderPage = createPdfPageRenderer(document as unknown as PdfDocumentLike);
+  const content: PageContent = { kind: "pdf", document: document as unknown as PdfDocumentLike };
 
   return {
     model,
     media,
-    renderPage,
+    content,
     dispose: () => {
       media.dispose();
       void document.destroy().catch(() => undefined);

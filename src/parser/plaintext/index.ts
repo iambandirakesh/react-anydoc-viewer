@@ -14,14 +14,11 @@
  */
 
 import type { DocumentFormat } from "../../errors";
-import type { PresentationModel, SlideModel } from "../../model/types";
+import type { DocumentModel, PageModel } from "../../model/types";
 import { createEmptyMediaStore, type MediaStore } from "../media";
-import { DEFAULT_COLOR_MAP, createEmptyTheme } from "../theme";
+import { DEFAULT_COLOR_MAP, createEmptyTheme } from "../drawingml/theme";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "../diagnostics";
-import type { PageRenderer } from "../../renderer/pageRenderer";
-import { createTextPageRenderer } from "../../components/TextPage";
-import type { GridPageData } from "../../components/GridPage";
-import { createSheetPageRenderer } from "../../components/SheetPage";
+import type { PageContent } from "../pageContent";
 import type { SheetPageData } from "../xlsx/model";
 import { classifyPlainText, classifyTextBytes, type Classification, type PlainTextKind } from "./classify";
 import { decodeTextFile } from "./decode";
@@ -51,9 +48,9 @@ export function detectPlainTextKind(bytes: Uint8Array): DocumentFormat | null {
 
 export interface ParsedPlainText {
   format: DocumentFormat;
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
-  renderPage: PageRenderer;
+  content: PageContent;
   dispose(): void;
 }
 
@@ -63,6 +60,16 @@ export interface ParsePlainTextOptions {
   /** the caller's override for an ambiguous text file */
   contentHint?: PlainTextKind;
   maxDiagnostics?: number;
+}
+
+/** A table laid out as rows plus column widths, before it becomes a worksheet. */
+interface GridPageData {
+  /** the rows of this page, header included when the table has one */
+  rows: string[][];
+  /** column widths in pixels, shared by every page of the table */
+  widths: number[];
+  /** true when the first row of `rows` is the table's header */
+  header: boolean;
 }
 
 /** How many rows are measured when sizing columns; a huge table sizes from its head. */
@@ -75,7 +82,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** One page per chunk of text; the renderer draws whichever page is on screen. */
-function textPages(pages: readonly TextPage[]): SlideModel[] {
+function textPages(pages: readonly TextPage[]): PageModel[] {
   return pages.map((_, index) => ({
     index,
     partName: `text#page${index + 1}`,
@@ -88,7 +95,7 @@ function textPages(pages: readonly TextPage[]): SlideModel[] {
   }));
 }
 
-function gridPages(pages: readonly GridPageData[]): SlideModel[] {
+function gridPages(pages: readonly GridPageData[]): PageModel[] {
   return pages.map((_, index) => ({
     index,
     partName: `grid#page${index + 1}`,
@@ -129,10 +136,10 @@ function layoutGrid(table: CsvTable): GridLayout {
 
 /** Assemble the model both kinds of page share. */
 function buildModel(
-  slides: SlideModel[],
+  slides: PageModel[],
   orientation: Orientation,
   diagnostics: Diagnostics,
-): PresentationModel {
+): DocumentModel {
   const box = boxEmu(orientation);
   return {
     width: box.width,
@@ -260,7 +267,7 @@ export function parsePlainTextDocument(
       format: "csv",
       model: buildModel(slides, layout.orientation, diagnostics),
       media,
-      renderPage: createSheetPageRenderer([data]),
+      content: { kind: "sheet", pages: [data] },
       dispose: () => media.dispose(),
     };
   }
@@ -279,7 +286,7 @@ export function parsePlainTextDocument(
     format: "text",
     model: buildModel(slides, "portrait", diagnostics),
     media,
-    renderPage: createTextPageRenderer(pagination.pages),
+    content: { kind: "text", pages: pagination.pages },
     dispose: () => media.dispose(),
   };
 }

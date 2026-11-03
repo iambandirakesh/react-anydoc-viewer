@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parsePackageBytes } from "../../src/parser/document";
 import type { DocumentParseOptions, ParsedDocument } from "../../src/parser/document";
-import { textBodyPlainText } from "../../src/parser/text";
+import { textBodyPlainText } from "../../src/parser/drawingml/text";
 import { emuToPx, twipsToEmu, twipsToPx } from "../../src/parser/units";
-import type { PictureNode, ShapeNode, SlideModel, TableNode } from "../../src/model/types";
+import type { PictureNode, ShapeNode, PageModel, TableNode } from "../../src/model/types";
 import {
   IMAGE_RELATIONSHIP,
   anchoredDrawing,
@@ -35,14 +35,14 @@ function parse(bytes: Uint8Array, options: DocumentParseOptions = {}): ParsedDoc
 }
 
 /** Every block whose text a reader can see, in order. */
-function pageText(slide: SlideModel): string {
+function pageText(slide: PageModel): string {
   return slide.shapes
     .map((shape) => (shape.kind === "shape" && shape.text ? textBodyPlainText(shape.text) : ""))
     .filter((text) => text.length > 0)
     .join("\n");
 }
 
-function shapesOf(slide: SlideModel): ShapeNode[] {
+function shapesOf(slide: PageModel): ShapeNode[] {
   return slide.shapes.filter((shape): shape is ShapeNode => shape.kind === "shape");
 }
 
@@ -56,7 +56,7 @@ describe("DOCX documents", () => {
     expect(parsed.model.slides).toHaveLength(1);
     expect(parsed.model.width).toBe(PAGE_WIDTH_EMU);
     expect(parsed.model.height).toBe(PAGE_HEIGHT_EMU);
-    expect(pageText(parsed.model.slides[0] as SlideModel)).toBe("Hello from a Word document");
+    expect(pageText(parsed.model.slides[0] as PageModel)).toBe("Hello from a Word document");
     // Core properties come along for the viewer's onLoad metadata.
     expect(parsed.model.title).toBe("Fixture document");
     expect(parsed.model.author).toBe("Fixture author");
@@ -72,7 +72,7 @@ describe("DOCX documents", () => {
     );
     expect(parsed.model.width).toBe(twipsToEmu(11906)); // A4 portrait
     expect(parsed.model.height).toBe(twipsToEmu(16838));
-    const shape = shapesOf(parsed.model.slides[0] as SlideModel)[0] as ShapeNode;
+    const shape = shapesOf(parsed.model.slides[0] as PageModel)[0] as ShapeNode;
     expect(shape.xfrm.x).toBe(twipsToEmu(1134));
     parsed.dispose();
 
@@ -97,7 +97,7 @@ describe("DOCX documents", () => {
         styles: null,
       }),
     );
-    const runs = (shapesOf(parsed.model.slides[0] as SlideModel)[0] as ShapeNode).text?.paragraphs[0]?.runs ?? [];
+    const runs = (shapesOf(parsed.model.slides[0] as PageModel)[0] as ShapeNode).text?.paragraphs[0]?.runs ?? [];
     expect(runs.map((run) => run.text)).toEqual(["bold", "italic", "super", "small"]);
     // `w:sz` is in half-points: 24 half-points is 12pt, which is 16 CSS px.
     expect(runs[0]?.props).toMatchObject({ bold: true, size: 16, font: "Arial" });
@@ -113,10 +113,10 @@ describe("DOCX documents", () => {
     const parsed = parse(
       buildDocx({ body: paragraph("default"), styles: stylesXml({ defaultSize: 24, defaultFont: "Georgia" }) }),
     );
-    const run = (shapesOf(parsed.model.slides[0] as SlideModel)[0] as ShapeNode).text?.paragraphs[0]?.runs[0];
+    const run = (shapesOf(parsed.model.slides[0] as PageModel)[0] as ShapeNode).text?.paragraphs[0]?.runs[0];
     expect(run?.props.size).toBeCloseTo(16); // 12pt
     expect(run?.props.font).toBe("Georgia");
-    const paragraphProps = shapesOf(parsed.model.slides[0] as SlideModel)[0]?.text?.paragraphs[0]?.props;
+    const paragraphProps = shapesOf(parsed.model.slides[0] as PageModel)[0]?.text?.paragraphs[0]?.props;
     expect(paragraphProps?.spaceAfter).toBeCloseTo(10.67, 1);
     expect(paragraphProps?.lineSpacing).toEqual({ type: "pct", value: 1.15 });
     parsed.dispose();
@@ -135,7 +135,7 @@ describe("DOCX documents", () => {
         }),
       }),
     );
-    const shapes = shapesOf(parsed.model.slides[0] as SlideModel);
+    const shapes = shapesOf(parsed.model.slides[0] as PageModel);
     const heading = shapes[0]?.text?.paragraphs[0]?.runs[0]?.props;
     expect(heading?.size).toBeCloseTo(21.33, 1);
     expect(heading?.bold).toBe(true);
@@ -151,7 +151,7 @@ describe("DOCX documents", () => {
     const parsed = parse(
       buildDocx({ body: wParagraph({ runs: wRun("Title-ish"), style: "Heading2" }), styles: null }),
     );
-    const props = shapesOf(parsed.model.slides[0] as SlideModel)[0]?.text?.paragraphs[0]?.runs[0]?.props;
+    const props = shapesOf(parsed.model.slides[0] as PageModel)[0]?.text?.paragraphs[0]?.runs[0]?.props;
     expect(props?.bold).toBe(true);
     expect(props?.size).toBeCloseTo(17.33, 1); // 13pt
     parsed.dispose();
@@ -171,7 +171,7 @@ describe("DOCX documents", () => {
         styles: null,
       }),
     );
-    const shapes = shapesOf(parsed.model.slides[0] as SlideModel);
+    const shapes = shapesOf(parsed.model.slides[0] as PageModel);
     const bullet = shapes[0]?.text?.paragraphs[0]?.props.bullet;
     expect(bullet).toEqual({ type: "char", text: { char: "•", color: undefined, font: undefined } });
     expect(shapes[0]?.text?.paragraphs[0]?.props.indent).toEqual({ marL: 48, marR: 0, indent: -24 });
@@ -191,11 +191,11 @@ describe("DOCX documents", () => {
     const parsed = parse(buildDocx({ body: many }), { measureParagraph: uniformHeight(100) });
     // 864px of content / 100px blocks = 8 per page.
     expect(parsed.model.slides).toHaveLength(2);
-    expect(pageText(parsed.model.slides[0] as SlideModel).split("\n")).toHaveLength(8);
-    expect(pageText(parsed.model.slides[1] as SlideModel)).toBe("Paragraph 9");
+    expect(pageText(parsed.model.slides[0] as PageModel).split("\n")).toHaveLength(8);
+    expect(pageText(parsed.model.slides[1] as PageModel)).toBe("Paragraph 9");
     // Blocks are stacked from the top margin.
-    const firstY = shapesOf(parsed.model.slides[0] as SlideModel)[0]?.xfrm.y;
-    const secondY = shapesOf(parsed.model.slides[0] as SlideModel)[1]?.xfrm.y;
+    const firstY = shapesOf(parsed.model.slides[0] as PageModel)[0]?.xfrm.y;
+    const secondY = shapesOf(parsed.model.slides[0] as PageModel)[1]?.xfrm.y;
     expect(firstY).toBe(MARGIN_EMU);
     expect(secondY).toBe(MARGIN_EMU + 100 * 9525);
     parsed.dispose();
@@ -276,8 +276,8 @@ describe("DOCX documents", () => {
       { measureParagraph: uniformHeight(100) },
     );
     expect(parsed.model.slides).toHaveLength(2);
-    expect(pageText(parsed.model.slides[0] as SlideModel).split("\n")).toHaveLength(7);
-    expect(pageText(parsed.model.slides[1] as SlideModel)).toBe("Heading\nbody");
+    expect(pageText(parsed.model.slides[0] as PageModel).split("\n")).toHaveLength(7);
+    expect(pageText(parsed.model.slides[1] as PageModel)).toBe("Heading\nbody");
     parsed.dispose();
   });
 
@@ -313,7 +313,7 @@ describe("DOCX documents", () => {
       }),
       { measureParagraph: uniformHeight(30) },
     );
-    const table = (parsed.model.slides[0] as SlideModel).shapes.find(
+    const table = (parsed.model.slides[0] as PageModel).shapes.find(
       (shape): shape is TableNode => shape.kind === "table",
     );
     expect(table).toBeDefined();
@@ -350,7 +350,7 @@ describe("DOCX documents", () => {
     );
     const codes = parsed.model.diagnostics.map((diagnostic) => diagnostic.code);
     expect(codes).toContain("docx.table.style");
-    const table = (parsed.model.slides[0] as SlideModel).shapes.find(
+    const table = (parsed.model.slides[0] as PageModel).shapes.find(
       (shape): shape is TableNode => shape.kind === "table",
     );
     expect(table?.table.rows[0]?.cells[0]?.borders?.t).not.toBeNull();
@@ -387,7 +387,7 @@ describe("DOCX documents", () => {
       }),
       { measureParagraph: uniformHeight(40) },
     );
-    const pictures = (parsed.model.slides[0] as SlideModel).shapes.filter(
+    const pictures = (parsed.model.slides[0] as PageModel).shapes.filter(
       (shape): shape is PictureNode => shape.kind === "picture",
     );
     expect(pictures).toHaveLength(2);
@@ -411,7 +411,7 @@ describe("DOCX documents", () => {
         styles: null,
       }),
     );
-    const picture = (parsed.model.slides[0] as SlideModel).shapes.find(
+    const picture = (parsed.model.slides[0] as PageModel).shapes.find(
       (shape): shape is PictureNode => shape.kind === "picture",
     );
     expect(picture?.mediaPath).toBeNull();
@@ -435,7 +435,7 @@ describe("DOCX documents", () => {
         styles: null,
       }),
     );
-    const shapes = shapesOf(parsed.model.slides[0] as SlideModel);
+    const shapes = shapesOf(parsed.model.slides[0] as PageModel);
     expect(shapes[0]?.text?.paragraphs[0]?.runs[0]?.link).toMatchObject({
       href: "https://example.com/docs",
       safe: true,
@@ -464,7 +464,7 @@ describe("DOCX documents", () => {
         styles: null,
       }),
     );
-    expect(pageText(parsed.model.slides[0] as SlideModel)).toBe("kept and 3");
+    expect(pageText(parsed.model.slides[0] as PageModel)).toBe("kept and 3");
     parsed.dispose();
   });
 

@@ -18,7 +18,7 @@ import {
   tableXml,
   TINY_PNG,
 } from "../fixtures/pptx";
-import { parsePresentationBytes } from "../../src/parser/presentation";
+import { parsePresentationBytes } from "../../src/parser/pptx";
 import { readArchive } from "../../src/parser/archive";
 import { emuToPx } from "../../src/parser/units";
 

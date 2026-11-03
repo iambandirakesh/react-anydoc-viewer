@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import type { PresentationModel, SlideModel } from "../model/types";
+import type { DocumentModel, PageModel } from "../model/types";
 import type { MediaStore } from "../parser/media";
 import { SlideView } from "../renderer/SlideView";
 import type { PageRenderer } from "../renderer/pageRenderer";
@@ -8,9 +8,9 @@ import type { ElementSize, MeasuredRef } from "../hooks/useElementSize";
 import type { ViewerLabels } from "../types/public";
 
 export interface SlideCanvasProps {
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
-  slide: SlideModel | null;
+  slide: PageModel | null;
   slideIndex: number;
   slideWidth: number;
   slideHeight: number;

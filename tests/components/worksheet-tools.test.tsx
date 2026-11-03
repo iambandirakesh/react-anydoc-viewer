@@ -4,7 +4,7 @@ import { buildXlsx } from "../fixtures/xlsx";
 import { DocumentViewer } from "../../src/components/DocumentViewer";
 import { parseXlsxArchive } from "../../src/parser/xlsx";
 import { readArchive } from "../../src/parser/archive";
-import { findSheetMatches, selectionText, sheetCsv } from "../../src/components/worksheetUtils";
+import { findSheetMatches, selectionText, sheetCsv } from "../../src/utils/worksheet";
 
 afterEach(cleanup);
 const workbook = () => buildXlsx({ sheets: [{ name: "Dashboard", rows: [["Heading", "Revenue"], ["Cosmetics", 10], ["=UNSAFE()", 20]] }, { name: "Categories", rows: [["Category", "Revenue"], ["Cosmetics", 30]] }] });

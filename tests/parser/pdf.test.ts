@@ -43,7 +43,7 @@ describe("PDF documents", () => {
     expect(parsed.model.author).toBe("Fixture author");
     // Pages carry no shapes: the page renderer draws them.
     expect(parsed.model.slides[0]?.shapes).toHaveLength(0);
-    expect(typeof parsed.renderPage).toBe("function");
+    expect(parsed.content?.kind).toBe("pdf");
     expect(parsed.media.activeUrls).toBe(0);
     parsed.dispose();
   });

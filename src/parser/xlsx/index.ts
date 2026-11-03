@@ -14,20 +14,19 @@
  * and macros are outside the read-only surface.
  */
 
-import type { PresentationModel, SlideModel } from "../../model/types";
+import type { DocumentModel, PageModel } from "../../model/types";
 import { DocumentViewerError } from "../../errors";
 import { readText, type Archive, type ArchiveLimits } from "../archive";
 import { attr, attrBool, attrNum, child, children, find, parseXml, relAttr, type XmlNode } from "../xml";
 import { parseRelationships, relTypeName, relsPartNameFor } from "../relationships";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "../diagnostics";
-import { DEFAULT_COLOR_MAP, parseTheme } from "../theme";
+import { DEFAULT_COLOR_MAP, parseTheme } from "../drawingml/theme";
 import { createMediaStore, type MediaStore } from "../media";
 import { parseVisualStyles } from "./visualStyles";
 import { readSheetDrawings } from "./drawings";
 import type { CSSProperties } from "react";
 import { boxEmu } from "../plaintext/metrics";
-import { createSheetPageRenderer } from "../../components/SheetPage";
-import type { PageRenderer } from "../../renderer/pageRenderer";
+import type { PageContent } from "../pageContent";
 import { applyConditionalFormatting } from "./conditionalFormatting";
 import { formatNumericCell, parseStyles } from "./styles";
 import type { SheetCell, SheetPageData } from "./model";
@@ -50,11 +49,11 @@ export interface XlsxParseOptions {
 }
 
 export interface ParsedXlsx {
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
   /** One page per worksheet, in workbook order. */
   pageData: readonly SheetPageData[];
-  renderPage: PageRenderer;
+  content: PageContent;
   dispose(): void;
 }
 
@@ -449,7 +448,7 @@ function buildSheetPage(
   };
 }
 
-function emptyPage(index: number, part: string, name: string): SlideModel {
+function emptyPage(index: number, part: string, name: string): PageModel {
   return {
     index,
     partName: `${part}#page${index + 1}`,
@@ -479,7 +478,7 @@ export function parseXlsxArchive(archive: Archive, options: XlsxParseOptions = {
   const core = readCoreProperties(archive);
 
   const pageData: SheetPageData[] = [];
-  const slides: SlideModel[] = [];
+  const slides: PageModel[] = [];
 
   sheets.forEach((sheet, index) => {
     const warn = (code: string, message: string) => {
@@ -517,7 +516,7 @@ export function parseXlsxArchive(archive: Archive, options: XlsxParseOptions = {
   });
 
   const page = boxEmu("landscape");
-  const model: PresentationModel = {
+  const model: DocumentModel = {
     width: page.width,
     height: page.height,
     slides,
@@ -535,7 +534,7 @@ export function parseXlsxArchive(archive: Archive, options: XlsxParseOptions = {
     model,
     media,
     pageData,
-    renderPage: createSheetPageRenderer(pageData),
+    content: { kind: "sheet", pages: pageData },
     dispose: () => media.dispose(),
   };
 }

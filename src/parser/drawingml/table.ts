@@ -7,9 +7,9 @@
  * was approximated.
  */
 
-import type { Fill, RGBA, TableBorders, TableCell, TableData, TableRow } from "../model/types";
-import { attr, attrBool, attrNum, child, children, type XmlNode } from "./xml";
-import { emuToPx, ptToPx } from "./units";
+import type { Fill, RGBA, TableBorders, TableCell, TableData, TableRow } from "../../model/types";
+import { attr, attrBool, attrNum, child, children, type XmlNode } from "../xml";
+import { emuToPx, ptToPx } from "../units";
 import { isColorElement, resolveColorElement } from "./color";
 import { parseFill, type DrawingContext } from "./drawing";
 import { parseTextBody, type TextContext } from "./text";
@@ -50,7 +50,7 @@ function parseCellBorders(tcPr: XmlNode | null, ctx: DrawingContext): TableBorde
 function parseCellText(
   tc: XmlNode,
   ctx: TextContext,
-): import("../model/types").TextBody | null {
+): import("../../model/types").TextBody | null {
   const txBody = child(tc, "txBody");
   if (!txBody) return null;
   return parseTextBody(txBody, ctx);

@@ -3,10 +3,12 @@
  *
  * One component serves every supported format, because the parser hands it the
  * same model whatever the file was. Responsibilities are split by seam:
- *  - `usePresentation` owns loading, cancellation and media lifetime;
- *  - `SlideCanvas` owns scaling and per-slide failure containment;
- *  - this component owns the chrome (toolbar, thumbnails, diagnostics),
- *    navigation state and the public imperative handle.
+ *  - `useDocument` owns loading, cancellation and media lifetime;
+ *  - `usePageNavigation`, `useZoom` and `useViewerKeyboard` own page, scale and
+ *    input state;
+ *  - `SlideCanvas` and `WorkbookView` own the stage for pages and worksheets;
+ *  - this component wires them together, owns the chrome (toolbar, thumbnails,
+ *    diagnostics) and the public imperative handle.
  */
 
 import {
@@ -17,8 +19,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
-  type MouseEvent,
   type ReactNode,
 } from "react";
 /**
@@ -28,49 +28,31 @@ import {
  */
 import "../styles.css";
 import type { DocumentFormat } from "../errors";
-import type { PresentationModel } from "../model/types";
+import type { DocumentModel } from "../model/types";
 import { emuToPx } from "../parser/units";
-import { usePresentation } from "../hooks/usePresentation";
+import { useDocument } from "../hooks/useDocument";
 import { useElementSize } from "../hooks/useElementSize";
 import { useFullscreen } from "../hooks/useFullscreen";
+import { usePageNavigation } from "../hooks/usePageNavigation";
+import { usePresentationHint } from "../hooks/usePresentationHint";
 import { usePresentationMode } from "../hooks/usePresentationMode";
-import { WorksheetTools } from "./WorksheetTools";
+import { useRenderIssues } from "../hooks/useRenderIssues";
+import { useViewerKeyboard } from "../hooks/useViewerKeyboard";
+import { MAX_ZOOM, MIN_ZOOM, useZoom } from "../hooks/useZoom";
 import { SlideCanvas } from "./SlideCanvas";
+import { WorkbookView } from "./WorkbookView";
 import { ThumbnailSidebar } from "./ThumbnailSidebar";
 import { ViewerToolbar } from "./ViewerToolbar";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
-import { mergeLabels } from "./labels";
-import type {
-  FitMode,
-  DocumentDiagnostic,
-  DocumentViewerHandle,
-  DocumentViewerProps,
-  DocumentInfo,
-} from "../types/public";
+import { mergeLabels } from "../labels";
+import type { DocumentViewerHandle, DocumentViewerProps } from "../types/public";
 
-const ZOOM_LADDER = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2, 3, 4];
 const STAGE_INSET = 12;
 /**
  * Extra space kept clear at the bottom of the stage while the floating toolbar
  * is on screen, so a fitted slide is never hidden behind it.
  */
 const TOOLBAR_CLEARANCE = 44;
-/** how long the presentation hint stays on screen after the last activity */
-const HINT_VISIBLE_MS = 3200;
-const MAX_RENDER_ISSUES = 40;
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 8;
-let nextWorksheetPanelId = 0;
-
-function clamp(value: number, min: number, max: number): number {
-  return value < min ? min : value > max ? max : value;
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName.toLowerCase();
-  return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
-}
 
 export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(function DocumentViewer(
   props,
@@ -112,39 +94,6 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
   const labels = useMemo(() => mergeLabels(labelOverrides), [labelOverrides]);
   const resolvedSource = source ?? file ?? null;
   const controlsVisible = showToolbar ?? showControls;
-  // Assign after mount so React 17 works and server/client initial markup agrees.
-  const [worksheetPanelId, setWorksheetPanelId] = useState<string>();
-  useEffect(() => {
-    setWorksheetPanelId(`radv-worksheet-panel-${++nextWorksheetPanelId}`);
-  }, []);
-
-  /* ------------------------------------------------------ render issues */
-
-  const [renderIssues, setRenderIssues] = useState<DocumentDiagnostic[]>([]);
-  const issueKeys = useRef<Set<string>>(new Set());
-  const pendingIssues = useRef<DocumentDiagnostic[]>([]);
-  const slideIndexRef = useRef(0);
-
-  /**
-   * Issues are reported from inside the renderer, i.e. while a child component is
-   * rendering. Updating state there trips React's "cannot update a component while
-   * rendering a different component" warning (and concurrent rendering may drop
-   * the update), so reports are buffered and flushed right after the commit.
-   */
-  const reportIssue = useCallback((code: string, message: string) => {
-    const slideIndex = slideIndexRef.current;
-    const key = `${slideIndex}|${code}|${message}`;
-    if (issueKeys.current.has(key) || issueKeys.current.size >= MAX_RENDER_ISSUES) return;
-    issueKeys.current.add(key);
-    pendingIssues.current.push({ severity: "warning", code, message, slideIndex });
-  }, []);
-
-  useEffect(() => {
-    if (pendingIssues.current.length === 0) return;
-    const queued = pendingIssues.current;
-    pendingIssues.current = [];
-    setRenderIssues((previous) => [...previous, ...queued]);
-  });
 
   /* ---------------------------------------------------------- loading */
 
@@ -155,9 +104,10 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
   const onDiagnosticsRef = useRef(props.onDiagnostics);
   onDiagnosticsRef.current = props.onDiagnostics;
 
-  const handleLoaded = useCallback((parsed: PresentationModel, format: DocumentFormat) => {
+  const handleLoaded = useCallback((parsed: DocumentModel, format: DocumentFormat) => {
     onLoadRef.current?.({
       format,
+      pageCount: parsed.slides.length,
       slideCount: parsed.slides.length,
       widthEmu: parsed.width,
       heightEmu: parsed.height,
@@ -167,7 +117,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
     });
   }, []);
 
-  const presentation = usePresentation(resolvedSource, {
+  const loaded = useDocument(resolvedSource, {
     limits,
     fetchOptions,
     maxDownloadBytes,
@@ -178,65 +128,29 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
     onDiagnostics: (diagnostics) => onDiagnosticsRef.current?.(diagnostics),
   });
 
-  const { model, media, status, error, renderPage } = presentation;
+  const { model, media, status, error, renderPage, content, loadId } = loaded;
+  const worksheetPages = content?.kind === "sheet" ? content.pages : undefined;
   const slideCount = model?.slides.length ?? 0;
-  const isWorkbook = presentation.format === "xlsx" || presentation.format === "csv";
+  const isWorkbook = loaded.format === "xlsx" || loaded.format === "csv";
 
-  /* ------------------------------------------------------- navigation */
+  /* ------------------------------------------------ navigation, issues */
 
-  const [internalSlide, setInternalSlide] = useState(defaultSlide);
-  const requestedIndex = controlledSlide ?? internalSlide;
-  const slideIndex = slideCount === 0 ? 0 : clamp(Math.round(requestedIndex), 0, slideCount - 1);
-  slideIndexRef.current = slideIndex;
+  const navigation = usePageNavigation({
+    count: slideCount,
+    controlled: controlledSlide,
+    defaultIndex: defaultSlide,
+    resetKey: loadId,
+    onChange: props.onSlideChange,
+  });
+  const { index: slideIndex, goTo: goToSlide, next: goNext, previous: goPrevious } = navigation;
+  const renderIssues = useRenderIssues(navigation.indexRef, loadId);
+  const reportIssue = renderIssues.report;
 
-  const onSlideChangeRef = useRef(props.onSlideChange);
-  onSlideChangeRef.current = props.onSlideChange;
-
-  const goToSlide = useCallback(
-    (index: number) => {
-      const currentCount = slideCountRef.current;
-      if (currentCount === 0) return;
-      const next = clamp(Math.round(index), 0, currentCount - 1);
-      if (controlledSlideRef.current === undefined) setInternalSlide(next);
-      if (next !== slideIndexRef.current) onSlideChangeRef.current?.(next);
-    },
-    [],
-  );
-
-  const slideCountRef = useRef(slideCount);
-  slideCountRef.current = slideCount;
-  const controlledSlideRef = useRef(controlledSlide);
-  controlledSlideRef.current = controlledSlide;
-
-  const goNext = useCallback(() => goToSlide(slideIndexRef.current + 1), [goToSlide]);
-  const goPrevious = useCallback(() => goToSlide(slideIndexRef.current - 1), [goToSlide]);
-
-  // Keep a controlled/out-of-range index inside the new presentation's bounds.
-  useEffect(() => {
-    if (slideCount === 0) return;
-    if (requestedIndex < 0 || requestedIndex > slideCount - 1 || !Number.isFinite(requestedIndex)) {
-      setInternalSlide(slideIndex);
-      onSlideChangeRef.current?.(slideIndex);
-    }
-  }, [requestedIndex, slideCount, slideIndex]);
-
-  // A newly loaded presentation resets to the first slide and clears issues.
-  const loadId = presentation.loadId;
-  useEffect(() => {
-    if (loadId === 0) return;
-    issueKeys.current = new Set();
-    pendingIssues.current = [];
-    setRenderIssues([]);
-    setInternalSlide(defaultSlide);
-  }, [loadId, defaultSlide]);
-
-  /* ------------------------------------------------------ zoom and fit */
+  /* ------------------------------------------------- presentation mode */
 
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fullscreen = useFullscreen(rootRef);
-
-  /* ------------------------------------------------- presentation mode */
 
   const onPresentationChangeRef = useRef(props.onPresentationChange);
   onPresentationChangeRef.current = props.onPresentationChange;
@@ -250,109 +164,28 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
   // error or an empty source still renders its own state (and the state stays
   // controlled, so a host app can decide what to do about it).
   const presenting = presentationMode.active && presentationMode.available;
+  const hintVisible = usePresentationHint(rootRef, presenting);
 
-  // A slide counter and key hint that fades out; any pointer movement brings it back.
-  const [hintVisible, setHintVisible] = useState(false);
-  useEffect(() => {
-    if (!presenting) {
-      setHintVisible(false);
-      return undefined;
-    }
-    setHintVisible(true);
-    const root = rootRef.current;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const show = () => {
-      setHintVisible(true);
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => setHintVisible(false), HINT_VISIBLE_MS);
-    };
-    show();
-    root?.addEventListener("mousemove", show);
-    root?.addEventListener("touchstart", show);
-    return () => {
-      if (timer) clearTimeout(timer);
-      root?.removeEventListener("mousemove", show);
-      root?.removeEventListener("touchstart", show);
-    };
-  }, [presenting]);
-
-  const [fitState, setFitState] = useState<FitMode>(fit);
-  useEffect(() => setFitState(fit), [fit]);
-
-  const [internalZoom, setInternalZoom] = useState<number | null>(defaultZoom ?? null);
-  useEffect(() => {
-    if (controlledZoom !== undefined) setInternalZoom(controlledZoom);
-  }, [controlledZoom]);
+  /* ------------------------------------------------------ zoom and fit */
 
   const slideWidth = model ? emuToPx(model.width) : 1280;
   const slideHeight = model ? emuToPx(model.height) : 720;
-
-  const fitScale = useMemo(() => {
-    if (!size.measured) return 1;
-    // A slideshow fills the viewport: no stage padding, and no toolbar either.
-    const inset = presenting ? 0 : STAGE_INSET;
-    const bottomInset = presenting || !controlsVisible ? inset : inset + TOOLBAR_CLEARANCE;
-    const availableWidth = Math.max(size.width - inset * 2, 1);
-    const availableHeight = Math.max(size.height - inset - bottomInset, 1);
-    switch (fitState) {
-      case "width":
-        return availableWidth / slideWidth;
-      case "height":
-        return availableHeight / slideHeight;
-      case "page":
-        return Math.min(availableWidth / slideWidth, availableHeight / slideHeight);
-      default:
-        return 1;
-    }
-  }, [
-    controlsVisible,
-    fitState,
-    presenting,
-    size.height,
-    size.measured,
-    size.width,
-    slideHeight,
-    slideWidth,
-  ]);
-
-  const scale = internalZoom ?? (isWorkbook ? 1 : fitScale);
-  const onZoomChangeRef = useRef(props.onZoomChange);
-  onZoomChangeRef.current = props.onZoomChange;
-  const onFitChangeRef = useRef(props.onFitChange);
-  onFitChangeRef.current = props.onFitChange;
-
-  const setZoom = useCallback(
-    (next: number) => {
-      const clamped = clamp(next, MIN_ZOOM, MAX_ZOOM);
-      if (controlledZoom === undefined) setInternalZoom(clamped);
-      onZoomChangeRef.current?.(clamped);
-    },
-    [controlledZoom],
-  );
-
-  const zoomIn = useCallback(() => {
-    const next = ZOOM_LADDER.find((step) => step > scale + 0.001) ?? ZOOM_LADDER[ZOOM_LADDER.length - 1]!;
-    setZoom(next);
-  }, [scale, setZoom]);
-
-  const zoomOut = useCallback(() => {
-    const previous = [...ZOOM_LADDER].reverse().find((step) => step < scale - 0.001) ?? ZOOM_LADDER[0]!;
-    setZoom(previous);
-  }, [scale, setZoom]);
-
-  const resetZoom = useCallback(() => {
-    if (controlledZoom === undefined) setInternalZoom(null);
-    onZoomChangeRef.current?.(isWorkbook ? 1 : fitScale);
-  }, [controlledZoom, fitScale, isWorkbook]);
-
-  const changeFit = useCallback(
-    (next: FitMode) => {
-      setFitState(next);
-      if (controlledZoom === undefined) setInternalZoom(null);
-      onFitChangeRef.current?.(next);
-    },
-    [controlledZoom],
-  );
+  // A slideshow fills the viewport: no stage padding, and no toolbar either.
+  const inset = presenting ? 0 : STAGE_INSET;
+  const zoom = useZoom({
+    fit,
+    controlled: controlledZoom,
+    defaultZoom,
+    stage: size,
+    pageWidth: slideWidth,
+    pageHeight: slideHeight,
+    inset,
+    bottomInset: presenting || !controlsVisible ? inset : inset + TOOLBAR_CLEARANCE,
+    fitDisabled: isWorkbook,
+    onZoomChange: props.onZoomChange,
+    onFitChange: props.onFitChange,
+  });
+  const { scale, setZoom, zoomIn, zoomOut, resetZoom } = zoom;
 
   /* -------------------------------------------------------- thumbnails */
 
@@ -363,123 +196,23 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
 
   /* ---------------------------------------------------------- keyboard */
 
-  const onKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      if (!keyboardNavigation || event.defaultPrevented) return;
-      if (isWorkbook && !["+", "=", "-", "_", "0", "f"].includes(event.key)) return;
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (isEditableTarget(event.target)) return;
-      let handled = true;
-      switch (event.key) {
-        case "ArrowRight":
-        case "ArrowDown":
-        case "PageDown":
-        case " ":
-        case "n":
-          goNext();
-          break;
-        case "ArrowLeft":
-        case "ArrowUp":
-        case "PageUp":
-        case "p":
-          goPrevious();
-          break;
-        case "Home":
-          goToSlide(0);
-          break;
-        case "End":
-          goToSlide(slideCountRef.current - 1);
-          break;
-        case "+":
-        case "=":
-          zoomIn();
-          break;
-        case "-":
-        case "_":
-          zoomOut();
-          break;
-        case "0":
-          resetZoom();
-          break;
-        case "f":
-          // The overlay fallback means fullscreen always works, even where the
-          // native Fullscreen API is unavailable.
-          fullscreen.toggle();
-          break;
-        default:
-          handled = false;
-      }
-      if (handled) event.preventDefault();
-    },
-    [fullscreen, goNext, goPrevious, goToSlide, keyboardNavigation, resetZoom, zoomIn, zoomOut, isWorkbook],
-  );
-
-  // A slideshow owns the screen: keys are handled on the document (focus can sit
-  // anywhere after a click) and must not also reach the toolbar handler.
-  useEffect(() => {
-    if (!presenting || typeof document === "undefined") return undefined;
-
-    const onPresentingKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.key === "Escape") {
-        // Esc leaves the slideshow first, even if the fullscreen overlay is on.
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        presentationMode.exit();
-        return;
-      }
-      if (isWorkbook || !keyboardNavigation || isEditableTarget(event.target)) return;
-      let handled = true;
-      switch (event.key) {
-        case "ArrowRight":
-        case "ArrowDown":
-        case "PageDown":
-        case "Enter":
-        case " ":
-        case "n":
-          goNext();
-          break;
-        case "ArrowLeft":
-        case "ArrowUp":
-        case "PageUp":
-        case "Backspace":
-        case "p":
-          goPrevious();
-          break;
-        case "Home":
-          goToSlide(0);
-          break;
-        case "End":
-          goToSlide(slideCountRef.current - 1);
-          break;
-        default:
-          handled = false;
-      }
-      if (handled) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    };
-
-    document.addEventListener("keydown", onPresentingKeyDown, true);
-    return () => document.removeEventListener("keydown", onPresentingKeyDown, true);
-  }, [presenting, keyboardNavigation, goNext, goPrevious, goToSlide, presentationMode, isWorkbook]);
-
-  // Clicking the slide advances, the way PowerPoint does; links keep working.
-  const onViewerClick = useCallback(
-    (event: MouseEvent<HTMLDivElement>) => {
-      if (!presenting || isWorkbook) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("a,button")) return;
-      goNext();
-    },
-    [presenting, goNext, isWorkbook],
-  );
+  const keyboard = useViewerKeyboard({
+    enabled: keyboardNavigation,
+    isWorkbook,
+    presenting,
+    navigation,
+    zoomIn,
+    zoomOut,
+    resetZoom,
+    toggleFullscreen: fullscreen.toggle,
+    exitPresentation: presentationMode.exit,
+  });
 
   /* ------------------------------------------------------------ handle */
 
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
+  const { countRef: slideCountRef, indexRef: slideIndexRef } = navigation;
 
   useImperativeHandle(
     ref,
@@ -503,17 +236,19 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
       exitPresentation: presentationMode.exit,
       togglePresentation: presentationMode.toggle,
       isPresenting: () => presentationMode.active,
-      reload: presentation.reload,
+      reload: loaded.reload,
     }),
     [
       fullscreen,
       goNext,
       goPrevious,
       goToSlide,
-      presentation.reload,
+      loaded.reload,
       presentationMode,
       resetZoom,
       setZoom,
+      slideCountRef,
+      slideIndexRef,
       zoomIn,
       zoomOut,
     ],
@@ -525,8 +260,8 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
   const currentSlide = model && slideCount > 0 ? model.slides[slideIndex] ?? null : null;
 
   const diagnostics = useMemo(
-    () => [...(model?.diagnostics ?? []), ...renderIssues],
-    [model, renderIssues],
+    () => [...(model?.diagnostics ?? []), ...renderIssues.issues],
+    [model, renderIssues.issues],
   );
 
   let body: ReactNode;
@@ -540,7 +275,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
       );
   } else if (status === "error" && error) {
     body =
-      renderError?.(error, presentation.reload) ?? (
+      renderError?.(error, loaded.reload) ?? (
         <div className="radv-status radv-status-error" role="alert" data-testid="rv-error">
           <strong>{labels.errorTitle}</strong>
           <p className="radv-error-message">{error.message}</p>
@@ -548,41 +283,30 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
             {error.code}
           </code>
           {error.detail ? <p className="radv-error-detail">{error.detail}</p> : null}
-          <button type="button" className="radv-btn radv-btn-primary" onClick={presentation.reload}>
+          <button type="button" className="radv-btn radv-btn-primary" onClick={loaded.reload}>
             {labels.retry}
           </button>
         </div>
       );
   } else if (status === "ready" && model && media) {
     body = isWorkbook && renderPage && currentSlide ? (
-      <div className="radv-workbook" >
-        {controlsVisible && renderPage.worksheetPages && <WorksheetTools key={loadId} pages={renderPage.worksheetPages} index={slideIndex} navigate={goToSlide} root={rootRef} fitWidth={() => {
-          const sheet = renderPage.worksheetPages?.[slideIndex];
-          if (!sheet) return;
-          const width = Math.max(sheet.widths.reduce((a, b) => a + b, 44), ...(sheet.drawings ?? []).map((node) => emuToPx(node.xfrm.x + node.xfrm.cx) + 44));
-          setZoom(Math.max(1, size.width - 2) / Math.max(1, width));
-        }} />}
-
-        <div className="radv-workbook-viewport" ref={containerRef} role="tabpanel" id={worksheetPanelId} aria-label={currentSlide.name ?? undefined}>
-          <div style={{ transform: `scale(${internalZoom ?? 1})`, transformOrigin: "top left" }}>
-            {renderPage({ page: currentSlide, width: Math.max(size.width, 1) / (internalZoom ?? 1), height: Math.max(size.height, 1) / (internalZoom ?? 1), scale: internalZoom ?? 1, interactive: true, media, labels, warn: reportIssue })}
-          </div>
-        </div>
-        <div className="radv-workbook-footer"><div className="radv-sheet-tabs" role="tablist" aria-label="Worksheets">
-          {model.slides.map((sheet, index) => <button type="button" role="tab" key={index} aria-selected={slideIndex === index} aria-controls={worksheetPanelId} tabIndex={slideIndex === index ? 0 : -1} onClick={() => goToSlide(index)} onKeyDown={(event) => {
-            const next = event.key === "ArrowRight" ? (index + 1) % slideCount : event.key === "ArrowLeft" ? (index + slideCount - 1) % slideCount : event.key === "Home" ? 0 : event.key === "End" ? slideCount - 1 : null;
-            if (next === null) return;
-            event.preventDefault(); event.stopPropagation(); goToSlide(next);
-            (event.currentTarget.parentElement?.children[next] as HTMLElement | undefined)?.focus();
-          }}>{sheet.name || `Sheet ${index + 1}`}</button>)}
-        </div>
-        {controlsVisible && <div className="radv-workbook-zoom">
-          <button type="button" aria-label="Zoom out" onClick={zoomOut} disabled={scale <= MIN_ZOOM}>−</button>
-          <button type="button" aria-label="Reset zoom" onClick={resetZoom}>{Math.round(scale * 100)}%</button>
-          <button type="button" aria-label="Zoom in" onClick={zoomIn} disabled={scale >= MAX_ZOOM}>+</button>
-        </div>}
-        </div>
-      </div>
+      <WorkbookView
+        model={model}
+        media={media}
+        sheet={currentSlide}
+        sheetIndex={slideIndex}
+        worksheetPages={worksheetPages}
+        renderPage={renderPage}
+        showControls={controlsVisible}
+        loadId={loadId}
+        rootRef={rootRef}
+        viewportRef={containerRef}
+        viewportSize={size}
+        zoom={zoom}
+        labels={labels}
+        goToSheet={goToSlide}
+        onRenderIssue={reportIssue}
+      />
     ) : (
       <SlideCanvas
         model={model}
@@ -621,8 +345,8 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
       data-presenting={presenting ? "true" : "false"}
       data-fullscreen={fullscreen.usesOverlay ? "overlay" : fullscreen.isFullscreen ? "native" : "false"}
       tabIndex={keyboardNavigation ? 0 : -1}
-      onKeyDown={onKeyDown}
-      onClick={onViewerClick}
+      onKeyDown={keyboard.onKeyDown}
+      onClick={keyboard.onClick}
       role="region"
       aria-label={labels.viewerRegion}
     >
@@ -661,8 +385,8 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
               slideIndex={slideIndex}
               slideCount={slideCount}
               zoom={scale}
-              fit={fitState}
-              explicitZoom={internalZoom !== null}
+              fit={zoom.fit}
+              explicitZoom={zoom.explicit !== null}
               thumbnailsVisible={thumbnailsVisible}
               allowThumbnailToggle={allowThumbnailToggle ?? showThumbnails}
               isFullscreen={fullscreen.isFullscreen}
@@ -673,7 +397,7 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
               onZoom={setZoom}
               onZoomIn={zoomIn}
               onZoomOut={zoomOut}
-              onFit={changeFit}
+              onFit={zoom.changeFit}
               onToggleThumbnails={() => setThumbnailsVisible((visible) => !visible)}
               onToggleFullscreen={fullscreen.toggle}
               showPresentationControl={showPresentationControl}
