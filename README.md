@@ -4,6 +4,10 @@ A free, open-source React component that renders **PowerPoint (`.pptx`)**, **Wor
 (`.docx`)**, **Excel workbooks (`.xlsx`/`.xlsm`)**, **PDF**, **images (TIFF
 included)**, **CSV/TSV tables** and **text files** directly in the browser.
 
+**[Live demo](https://iambandirakesh.github.io/react-anydoc-viewer/)** ·
+[npm](https://www.npmjs.com/package/react-anydoc-viewer) ·
+[GitHub](https://github.com/iambandirakesh/react-anydoc-viewer)
+
 - **No watermark, no branding, no ads** — ever.
 - **No paid API, no SDK licence, no external service.** Parsing and rendering happen entirely on the client.
 - **One component for every format**: documents use page navigation and thumbnails;

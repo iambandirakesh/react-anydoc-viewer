@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://iambandirakesh.github.io/react-anydoc-viewer/sitemap.xml
