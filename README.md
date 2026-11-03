@@ -6,9 +6,8 @@ included)**, **CSV/TSV tables** and **text files** directly in the browser.
 
 - **No watermark, no branding, no ads** — ever.
 - **No paid API, no SDK licence, no external service.** Parsing and rendering happen entirely on the client.
-- **One component for everything**: slide navigation, thumbnails, zoom and
-  presentation mode do not care whether the file is a deck, a document, a PDF, a
-  photograph, a spreadsheet extract or a log file.
+- **One component for every format**: documents use page navigation and thumbnails;
+  XLSX and CSV use a scrollable grid with worksheet tabs, search and range copying.
 - **Lazy heavy paths.** Spreadsheets reuse the ZIP/XML reader the library already
   had; pdf.js and the TIFF decoder are only downloaded when a PDF or a TIFF is
   actually opened.
@@ -43,6 +42,9 @@ included)**, **CSV/TSV tables** and **text files** directly in the browser.
 - [Props reference](#props-reference)
 - [Supported PowerPoint elements](#supported-powerpoint-elements)
 - [Word documents](#word-documents)
+- [Spreadsheets](#spreadsheets)
+- [CSV and TSV tables](#csv-and-tsv-tables)
+- [TIFF images](#tiff-images)
 - [PDF files](#pdf-files)
 - [Performance](#performance)
 - [Security](#security)
@@ -126,7 +128,7 @@ The viewer fills its parent element, so give the container a height:
 | `.pptx` | Parsed here into a shape model, then drawn with SVG + HTML | Slides, themes, images, tables and charts |
 | `.docx` | Parsed here, paginated in the browser, then drawn with the same shape renderer | A page is a slide as far as the viewer is concerned |
 | `.xlsx` `.xlsm` | Parsed here, then drawn as a read-only grid | Worksheets use bottom tabs and a scrollable styled grid, with embedded charts/images; hidden sheets are included with a diagnostic. Formulas use saved results and are never evaluated |
-| `.pdf` | Rasterised page by page by [pdf.js](https://mozilla.github.io/pdf.js/) onto a canvas | The engine every browser PDF viewer uses |
+| `.pdf` | Rasterised page by page by [pdf.js](https://mozilla.github.io/pdf.js/) onto a canvas | Mozilla's PDF rendering engine |
 | `.png` `.jpg` `.jpeg` `.gif` `.webp` `.avif` `.bmp` `.svg` `.tif` `.tiff` | One page, sized from the file's own header | SVG is always an `<img>`, so it can never script your page. TIFF is decoded lazily and drawn on a canvas; multi-page TIFFs become multiple pages |
 | `.csv` `.tsv` | A single scrollable worksheet table | Delimiter detected from content; wide tables scroll horizontally and use the worksheet tools |
 | `.txt` `.log` `.json` `.html` `.htm` `.md` | Paginated as monospace text on US-Letter pages | JSON is pretty-printed; Markdown is currently shown as source too, and an HTML file is always shown as **source** — never parsed, never framed, never executed |
@@ -231,7 +233,7 @@ When you pass a URL the viewer calls `fetch`:
 The toolbar is on by default and can be turned off entirely:
 
 ```tsx
-<DocumentViewer source={file} showControls={false} />   // no chrome at all
+<DocumentViewer source={file} showControls={false} />   // hide tools/toolbar; worksheet tabs remain
 <DocumentViewer source={file} showToolbar={false} />    // alias of showControls
 <DocumentViewer source={file} showThumbnails />         // opens the sidebar and its toggle
 <DocumentViewer source={file} showThumbnails allowThumbnailToggle={false} />
@@ -242,7 +244,7 @@ With `showControls={false}` there is no Present button; drive the slideshow from
 your own UI through the handle instead — see
 [Presentation mode](#presentation-slideshow-mode).
 
-The chrome is a **small pill floating at the bottom of the stage**, centred on the
+For paginated formats, the chrome is a **small pill floating at the bottom of the stage**, centred on the
 slide, not a header bar: the document keeps the full width of the viewer and the
 slide is scaled to fit in the space left above the pill.
 
@@ -285,7 +287,8 @@ effect is announced to assistive technology: arrows and `Home`/`End` move throug
 the entries, and `Esc` closes it and returns focus to the percentage. Picking a percentage is a zoom (`onZoomChange`); picking a fit mode
 is a fit (`onFitChange`).
 
-Labels are fully localisable, including the slide counter, which is a function:
+The page-toolbar labels are localisable, including the slide counter, which is a
+function. Worksheet tool labels and notices currently use built-in English text:
 
 ```tsx
 <DocumentViewer
@@ -302,6 +305,11 @@ For a completely custom UI, hide the chrome, drive navigation through a ref and
 render your own buttons. Loading and error states can be replaced with
 `renderLoader` and `renderError`.
 
+XLSX and CSV use the worksheet tools and bottom zoom controls described in
+[Spreadsheets](#spreadsheets), rather than the floating page toolbar. Worksheet
+names remain available as tabs even with controls hidden; `showThumbnails` does
+not create a spreadsheet sidebar.
+
 ### Keyboard shortcuts
 
 Enabled by default (`keyboardNavigation`). The viewer is a focusable region; keys
@@ -315,6 +323,11 @@ are handled while it or one of its controls has focus.
 | `+` / `-` | Zoom in / out |
 | `0` | Reset to the `fit` mode |
 | `f` | Toggle fullscreen |
+
+For worksheets, Arrow keys move the focused cell, Shift+Arrow extends a range,
+and Ctrl/Cmd+C copies it. With the grid scroll container focused, normal scrolling
+keys apply. Worksheet tabs use Left/Right and Home/End. The page-navigation keys
+above do not change worksheets; `+`/`-`, `0` and `f` remain viewer shortcuts.
 
 ## Presentation (slideshow) mode
 
@@ -343,6 +356,11 @@ presenting:
 Press `f` inside a slideshow to use the browser's fullscreen as well (which also
 hides the address bar); `enterPresentation()` and `enterFullscreen()` compose.
 
+For XLSX and CSV, presentation mode expands the worksheet view but keeps its tabs
+and grid tools. Clicks and page-navigation keys do not advance sheets; `Esc` exits.
+The floating **Present** button is not shown for these formats, so use the handle
+or the controlled `presentation` prop to enter this mode.
+
 ## Imperative navigation
 
 ```tsx
@@ -368,6 +386,8 @@ The handle exposes `goToSlide`, `next`, `previous`, `first`, `last`,
 `getZoom`, `enterFullscreen`, `exitFullscreen`, `toggleFullscreen`,
 `enterPresentation`, `exitPresentation`, `togglePresentation`, `isPresenting` and
 `reload`.
+
+For XLSX, the slide index/count corresponds to worksheets; CSV has one table.
 
 For controlled usage, pass `slide` (0-based) and/or `zoom` and observe
 `onSlideChange` / `onZoomChange`.
@@ -481,12 +501,12 @@ component.
 | `defaultSlide` | `number` | `0` | Uncontrolled initial slide |
 | `showControls` | `boolean` | `true` | Show the toolbar |
 | `showToolbar` | `boolean` | — | Alias of `showControls` |
-| `showThumbnails` | `boolean` | `false` | Show the thumbnail sidebar |
+| `showThumbnails` | `boolean` | `false` | Show the sidebar for paginated formats; worksheets use tabs |
 | `allowThumbnailToggle` | `boolean` | `showThumbnails` | Show the sidebar toggle button |
 | `presentation` | `boolean` | — | Controlled presentation (slideshow) mode |
 | `defaultPresentation` | `boolean` | `false` | Start in presentation mode |
 | `showPresentationControl` | `boolean` | `true` | Show the Present button in the toolbar |
-| `fit` | `"width" \| "height" \| "page" \| "actual" \| "none"` | `"page"` | Initial scaling mode |
+| `fit` | `"width" \| "height" \| "page" \| "actual" \| "none"` | `"page"` | Initial page scaling mode; worksheets start at 100% unless zoom is supplied, with a separate Fit width action |
 | `zoom` | `number` | — | Controlled scale (`1` is 100%) |
 | `defaultZoom` | `number` | — | Uncontrolled initial scale |
 | `keyboardNavigation` | `boolean` | `true` | Enable keyboard shortcuts |
@@ -494,14 +514,14 @@ component.
 | `dark` | `boolean` | `false` | Shorthand for `theme="dark"` |
 | `className` / `style` | `string` / `CSSProperties` | — | Applied to the root element |
 | `emptySlideMessage` | `string` | `"This page is empty"` | Notice for a genuinely empty page |
-| `labels` | `Partial<ViewerLabels>` | — | Localised strings |
+| `labels` | `Partial<ViewerLabels>` | — | Page-toolbar and viewer strings; worksheet tool strings are currently English |
 | `debug` | `boolean` | `false` | Show the diagnostics panel |
 | `limits` | `Partial<ArchiveLimits>` | see below | Archive safety limits |
 | `fetchOptions` | `RequestInit` | — | Passed to `fetch` for URL sources |
 | `maxDownloadBytes` | `number` | `134217728` | Maximum accepted download size |
 | `contentHint` | `"text" \| "csv" \| "json" \| "html" \| "markdown"` | — | How to read an ambiguous text file; skips the content guess |
 | `pdfWorkerSrc` | `string` | — | URL of pdf.js's worker module; match it with `detectPdfEngine()` |
-| `onLoad` | `(info: DocumentInfo) => void` | — | Called after a successful parse |
+| `onLoad` | `(info: DocumentInfo) => void` | — | Format, count, page size, title and diagnostics after parsing; author is not exposed by this callback |
 | `onError` | `(error: DocumentViewerError) => void` | — | Called on any load/parse failure |
 | `onSlideChange` | `(index: number) => void` | — | Called when the visible slide changes |
 | `onZoomChange` | `(scale: number) => void` | — | Called when the zoom scale changes |
@@ -559,15 +579,15 @@ thumbnails, zoom, fit modes and presentation mode therefore work unchanged, and
 | Supported | Notes |
 | --- | --- |
 | Page size and margins (`w:pgSz`, `w:pgMar`), portrait and landscape | Custom page sizes are honoured; the last section's setup applies to the whole document |
-| Paragraphs: alignment, indents, spacing before/after, line spacing, borders, shading | Twips, half-points and EMU are converted to CSS pixels |
+| Paragraphs: alignment, indents, spacing before/after and line spacing | Twips, half-points and EMU are converted to CSS pixels; paragraph borders/shading are reported and omitted |
 | Runs: bold, italic, underline, strike, colour, highlight, size, font, super/subscript, caps | |
 | Styles: named paragraph and character styles, `basedOn` inheritance, doc defaults | Built-in heading/list styles are recognised |
 | Bulleted and numbered lists from `numbering.xml`, including nesting | `lvlText`, formats (`decimal`, `roman`, `alpha`, `bullet`) and restarts |
-| Tables: grid columns, `gridSpan` (merges), row heights, cell shading, borders | Nested tables are reported, not drawn |
-| Inline pictures, including extent-driven scaling | Floating/anchored shapes and text wrapping are reported |
+| Tables: grid columns, `gridSpan` (merges), row heights, cell shading, borders | Nested tables are flattened with a diagnostic; pictures inside cells are skipped |
+| Inline and anchored pictures, including extent-driven scaling | Anchored pictures use page offsets; text wrapping is not simulated and unsupported anchors are reported |
 | Hyperlinks, with the same scheme allowlist as slides | |
 | Explicit page breaks and keep-with-next | |
-| `docProps/core.xml` title and author | Exposed on `onLoad` |
+| `docProps/core.xml` title and author | Parsed into the internal model; `onLoad` exposes the title |
 
 Reported rather than rendered: headers and footers, footnotes and endnotes,
 comments, equations (`m:oMath`), text boxes and other floating shapes, revision
@@ -580,7 +600,7 @@ estimated fallback (reported as `docx.layout.estimated`) where no DOM is availab
 
 An `.xlsx`/`.xlsm` workbook opens as a read-only spreadsheet with **worksheet tabs**
 at the bottom. Select a tab to switch sheets; the grid scrolls within the viewer,
-and the bottom zoom controls change its scale. Arrow keys scroll the worksheet;
+and the bottom zoom controls change its scale. Arrow keys move the focused cell;
 when a worksheet tab has focus, Left/Right and Home/End navigate the tabs.
 Spreadsheet files use this layout instead of document thumbnails and page navigation.
 Each worksheet remembers its horizontal and vertical scroll position while the file
@@ -603,6 +623,8 @@ is open. The tools above the grid provide:
 Clipboard access can depend on browser permissions; keyboard copying is available
 when the clipboard button cannot write. Grid cells expose addresses and selection
 state to assistive technology. These controls follow `showControls`/`showToolbar`.
+The grid is capped rather than virtualized, and frozen panes are not implemented.
+Search fields stay white with dark text in both viewer themes.
 
 Workbooks use the existing ZIP/XML reader. Detection uses `xl/workbook.xml`, and
 worksheets and drawings are resolved through their relationships rather than file order.
@@ -610,7 +632,7 @@ worksheets and drawings are resolved through their relationships rather than fil
 | Supported | Notes |
 | --- | --- |
 | Shared strings, inline strings, numbers, booleans, error values | Rendered as text; cell contents are never interpreted as HTML |
-| Number formats | Common decimal precision, thousands separators, currency literals, negative/zero sections, percentages, and comma-scaled units |
+| Number formats | Common decimal precision, thousands separators, currency literals, negative/zero sections, percentages, and comma-scaled units; modified General formats fall back to the saved number |
 | Dates | Common date/date-time formats, including the 1904 date system |
 | Formulas | Displays the saved `<v>` result. Missing results are reported and shown empty; formulas are never recalculated |
 | Cell styles | Fonts, font sizes, emphasis, text colors, solid fills, borders, alignment, wrapping, and theme/indexed colors |
@@ -623,12 +645,12 @@ worksheets and drawings are resolved through their relationships rather than fil
 | Chart labels | Exact numeric data labels and hover details; crowded category axes show fewer labels without removing data points |
 | Embedded images | Packaged images at one-cell, two-cell, or absolute worksheet drawing anchors; external assets are never fetched |
 | Hidden sheets | Included in the tab list, with an information diagnostic |
-| Workbook metadata | Title and author from `docProps/core.xml` are exposed on `onLoad` |
+| Workbook metadata | Title and author are parsed; `onLoad` exposes the title |
 
 Chart layout is approximate. Charts have a small top inset to separate them from
 worksheet headings. Direct range references do not evaluate formulas: referenced
-formula cells still require saved results. External workbook references and defined
-names are not resolved.
+formula cells still require saved results. Missing numeric chart points stay missing
+rather than becoming zeroes. External workbook references and defined names are not resolved.
 
 Conditional comparison rules support font color/emphasis and solid fills, priority
 ordering, and `stopIfTrue`. Icon sets use accessible symbol approximations, and
@@ -649,7 +671,8 @@ and 200 applied rules per sheet.
 CSV and other detected delimited tables open as **one scrollable table**, using the
 same grid and tools as XLSX. Rows are not split across document pages, and wide
 columns keep their natural widths with horizontal scrolling, up to a maximum of
-320 CSS pixels. Long cell values wrap inside their columns and rows grow to fit the text. The single **Table**
+320 CSS pixels. Long cell values wrap inside their columns and rows grow to fit
+the text. The single **Table**
 tab supports cell search, selection/copy, fit-to-width, and CSV download. The first
 record is styled as the header. Values stay text: leading zeros, date-like values,
 and formula-like strings are not evaluated or reformatted.
@@ -731,35 +754,37 @@ in-process and `pdf.engine.worker` is reported instead of failing.
 
 Without a worker everything still works, but a page's first paint can stutter on
 large files because parsing shares the main thread. The viewer itself renders a page
-only when it becomes visible, so a 500-page PDF does not parse 500 pages up front.
+only when it becomes visible. The adapter still inspects up to 200 page sizes and
+waits for metadata before returning its model; it does not rasterise every page up front.
 
 ## Performance
 
-- The archive and every reusable part (theme, master, layout, chart, table style)
-  are parsed **at most once** per document.
+- ZIP entries are indexed once. The PPTX parser caches reusable themes, masters,
+  layouts and charts by part name; not every format uses the same caches.
 - Only the parts the renderer needs are inflated; embedded workbooks, notes and
   diagrams are never decompressed.
 - Media bytes are turned into object URLs **on demand**, when a page actually
   uses them, and are revoked on unmount or when a new source loads.
-- The visible page is rendered at its natural size and scaled with a CSS
-  transform, so zooming never re-flows text and scrolling does not re-render.
+- Pages and worksheet grids are scaled with a CSS transform. CSV rows use
+  content-driven height so long values wrap inside the capped column width.
 - Thumbnails are mounted only when they scroll near the viewport, so a 200-slide
   deck does not render 200 slides up front.
-- Rendering is memoised per page, so changing pages does not re-render the rest.
-- A `.docx` is **measured in one layout pass**, not one forced layout per
-  paragraph: every paragraph is laid out at the same content width, so the whole
-  document is measured at once and pagination reads the heights afterwards. This
-  was the largest cost in opening a long Word document.
+- The main shape-based slide view is memoised. Other page renderers and worksheet
+  selection have their own update paths.
+- DOCX paragraphs are measured in **batches of up to 4,000**, avoiding one forced
+  layout per paragraph. Custom measurers without batch support keep the individual
+  measurement path.
 
-The `.pptx` and `.docx` parsers run synchronously on the main thread after the
+The `.pptx`, `.docx` and `.xlsx` parsers run synchronously on the main thread after the
 download (the load is `await`, so React paints the loading state first). Most decks
 parse in a few milliseconds; a very large deck (hundreds of slides with large
 embedded media) will block briefly during that step. PDFs are parsed by pdf.js, in a
 worker when `pdfWorkerSrc` is set; rasterising a page whose content is a lot of
 vector art and fonts is pdf.js's cost rather than this library's.
 
-Measured with `npm run bench` in Chrome against the demo, from the bytes reaching
-the viewer to the first page being in the DOM (see the table below):
+Historical development measurements from before 0.2.3, using `npm run bench` in
+Chrome against the demo, from bytes reaching the viewer to the first page mounting.
+These are fixture-specific results, not fresh measurements of the current release:
 
 | File | Content | Load |
 | --- | --- | --- |
@@ -767,18 +792,21 @@ the viewer to the first page being in the DOM (see the table below):
 | `.docx` | 6,000 paragraphs and tables, 360 pages | **0.62 s** |
 | `.pdf` | 600 pages, 1.4 MB | **0.42 s** |
 
-Load time is linear in the amount of content — 360 slides take three times as long
-as 120, not ten — so the number for your own file follows from its size. If a file is
-slower than this suggests it should be, measure it instead of guessing:
-`npm run bench` generates large fixtures of each format, `BENCH_SCALE=3` triples
-them, `BENCH_PROFILE=1` prints where the main thread actually spent its time, and
-`BENCH_MEDIA=heavy` puts two pictures on every slide to check the media path.
+These timings do not predict arbitrary files, image decode completion or PDF raster
+completion. See [PERFORMANCE_REVIEW.md](PERFORMANCE_REVIEW.md) for the dated
+production benchmark, definitions and outstanding optimizations. The review does
+not benchmark the XLSX/CSV worksheet view added in 0.2.3.
 
-Bundle size (measured on the built artefacts): **86.3 kB gzipped** for the minified
-ESM bundle — the ZIP/XML dependencies, all three format front-ends and the viewer —
-plus **2.3 kB gzipped** of CSS. `pdfjs-dist` is excluded from those numbers because
-it is loaded lazily. Nothing is loaded from a CDN and no fonts or images are
-requested by the library itself.
+Measure your own files with `npm run bench`: `BENCH_FILE` chooses a local file,
+`BENCH_BASE_URL` targets a production preview, `BENCH_RUNS` controls repetitions,
+`BENCH_SCALE` scales generated fixtures, and `BENCH_PROFILE=1` records CPU hotspots.
+`BENCH_MEDIA=heavy` adds pictures to generated slides.
+
+Bundle sizes change with the implementation. Run `npm run build` for current
+ESM/CJS/UMD and CSS sizes rather than relying on a number from an older release.
+The parsers and shared worksheet UI are in the main bundle; `pdfjs-dist` and `utif`
+remain external, lazy imports when the host bundler supports code splitting. Nothing
+is fetched from a CDN by the library itself; worker URLs are supplied by the host.
 
 ## Security
 
@@ -819,10 +847,11 @@ See [SECURITY.md](SECURITY.md) for the threat model and how to report an issue.
 
 ## Browser support
 
-Modern evergreen browsers: Chrome/Edge 90+, Firefox 90+, Safari 15+.
+Target browsers (not an exhaustive version-by-version test matrix): Chrome/Edge 90+, Firefox 90+, Safari 15+.
 
 Requirements: ES2020, `fetch`, `URL.createObjectURL`, `ResizeObserver` (with a
-`window.resize` fallback), CSS flexbox, inline SVG. No polyfills are shipped.
+`window.resize` fallback), CSS flexbox, inline SVG. The viewer does not ship core
+polyfills; the pdf.js legacy build brings its own when selected.
 PDFs additionally need a 2D canvas and a Web Worker when `pdfWorkerSrc` is set;
 without a canvas the viewer shows a labelled notice instead of a blank page.
 `IntersectionObserver` and the Fullscreen API are optional — thumbnails fall back
@@ -832,7 +861,8 @@ including in Electron-style webviews and iframes without an `allowfullscreen`
 policy. `Esc` leaves the overlay.
 
 Server rendering works for the component's own markup (the initial state renders
-without touching the DOM); pages need a real DOM, and the media store falls back
+without touching the DOM), including React 17 CJS/SSR. Worksheet panel IDs are
+assigned after mount without requiring React 18's `useId`; pages need a real DOM, and the media store falls back
 to `data:` URLs when object URLs are unavailable. `pdfjs-dist` is imported lazily
 inside the effect that loads a PDF, so it is never touched during SSR.
 
@@ -864,7 +894,8 @@ inside the effect that loads a PDF, so it is never touched during SSR.
   The accessibility tree gets one image per page, not the text layer.
 - Text auto-fit (`normAutofit`) applies the recorded font scale but does not
   re-run PowerPoint's fitting algorithm, so a very long line can still overflow.
-- There is no print, no export and no editing.
+- There is no print, PDF export, Office-file export or editing. XLSX/CSV can export
+  their displayed values as CSV, without styles, drawings or formulas.
 - Parsing is synchronous on the main thread except for PDFs (see
   [Performance](#performance)).
 - Native fullscreen depends on the embedding environment. Where the browser
@@ -928,91 +959,56 @@ in [COMPATIBILITY.md](COMPATIBILITY.md); release history in
 
 ## Publishing
 
-The package is prepared for npm but is **not** published automatically, and nothing
-is published by any workflow in this repository. Release it from your own machine,
-once per version:
+Releases are performed manually; this repository has no automatic publishing
+workflow. The version in `package.json` is the source of truth (currently 0.2.3).
+For the next release:
 
 ```bash
-# 0. One-time: authenticate as the account that owns the name.
-npm login              # opens the browser; 2FA prompts are handled there
-npm whoami             # must print your npm username
-
-# 1. Confirm the name is still yours to take (404 = free).
+# Authenticate using the npm account authorized to publish this package.
+npm login
+npm whoami
 npm view react-anydoc-viewer version
 
-# 2. Verify from a clean install
+# Validate the checkout and the packed consumer applications.
 npm ci
 npm run typecheck
 npm test
-npm run test:package   # packs the tarball into React 19 and React 17 consumer apps
+npm run test:package
 
-# 3. Rehearse the upload. This is the real thing minus the PUT: it runs
-#    prepublishOnly (typecheck + tests + build), then prints every file and the
-#    tarball size. Nothing reaches the registry.
-npm publish --dry-run
-
-# 4. Publish. 0.1.0 has never been on the registry, so it goes out as-is.
+# Update CHANGELOG.md, commit the intended changes, then bump the release version.
+npm version patch       # choose minor/major when appropriate; commits and tags
+npm publish --dry-run   # runs prepublishOnly and previews the package contents
 npm publish --access public
-
-# 5. Verify the live artefact (the registry can lag a few seconds)
 npm view react-anydoc-viewer version dist.tarball
-
-# 6. For every release after this one: bump semver, add the CHANGELOG entry,
-#    then publish again. `0.1.0` itself is never bumped — a published version
-#    number cannot be reused, so that step belongs to the *next* release.
-npm version patch      # or minor / major
-npm publish --access public
 ```
 
-What the upload contains, measured on `0.1.0`: **118 files, ~617 kB packed,
-2.1 MB unpacked** — `dist/` (ESM, CJS, UMD, `styles.css`, `.d.ts`), `package.json`,
-`LICENSE` and the Markdown docs. Sources, tests, examples and the demo are excluded
-by the `files` field in `package.json`.
-
-Notes:
-
-- **The name is not reserved until the first publish.** `react-anydoc-viewer` was
-  unclaimed on the public registry when this package was prepared (`npm view` returns
-  a 404). Re-check in step 1; if it has been taken, either pick another name in
-  `package.json` or publish under a scope (`@your-scope/react-anydoc-viewer`, and
-  mirror the same value in your import paths).
-- **`prepublishOnly` runs the type-checker, the test suite, the build and a
-  publish gate** (`scripts/prepublish-guard.mjs`, offline), so a broken package
-  cannot be published by accident — including under `--dry-run`, which makes step 3
-  a complete verification pass. The gate fails the upload if ownership metadata
-  still points at a placeholder, if `files` would ship sources or tests, or if
-  `main`/`exports` promise a file the build never wrote.
-- **Signatures and provenance.** npm signs ordinary publishes and shows the
-  "Provenance" badge only for builds run from a public repository in CI (for
-  example GitHub Actions with `npm publish --provenance` and an `id-token: write`
-  permission). A local publish is signed by the registry, but carries no provenance
-  attestation.
-- **`npm version` requires a git repository to commit and tag.** Without one it only
-  rewrites the version in `package.json`, so commit and tag the release yourself
-  (`git tag -a v0.1.0 -m "0.1.0"`) before publishing.
-- **A published version is permanent.** You may unpublish a whole package within 72
-  hours of its first publish, but an individual version number can never be reused
-  once it has been published — a bad release is fixed with a new patch version, not
-  by editing `0.1.0`.
-- **Keep the npm account secured** with 2FA ("auth-and-writes") and, for automation,
-  a granular access token scoped to this package rather than a classic token.
-- Test the artefact before and after publishing with `npm run test:package`, which
-  installs the packed tarball into separate React 19 and React 17 projects.
+- A version already published cannot be reused. Use a new release version for a fix.
+- `npm version` expects a clean Git checkout for its normal commit/tag workflow.
+  Review and push the release commit/tag through your repository's release process.
+- `prepublishOnly` runs type checks, tests, the build and the offline publish gate
+  (`scripts/prepublish-guard.mjs`). `test:package` additionally verifies React 19
+  ESM, React 17 CJS/SSR, stylesheet exports and consumer declarations.
+- `npm run pack:dry` previews the files selected by `package.json`. The package
+  includes `dist/`, README, changelog, compatibility, architecture, security and
+  license files; source, tests, examples and analysis reports are excluded.
+- Use the authentication and publishing policy required by your npm account and
+  registry. This guide does not configure credentials or CI provenance for you.
 
 ## Licence and attribution
 
 MIT — see [LICENSE](LICENSE). You may use it in commercial products, modify it and
 redistribute it, with no attribution requirement beyond keeping the licence text.
 
-Bundled runtime dependencies:
+Runtime dependencies (pdf.js and UTIF are external lazy imports):
 
 | Package | Licence | Purpose |
 | --- | --- | --- |
 | [fflate](https://github.com/101arrowz/fflate) | MIT | Reading the ZIP/OPC package |
 | [fast-xml-parser](https://github.com/NaturalIntelligence/fast-xml-parser) | MIT | XML parsing with order preservation |
 | [pdfjs-dist](https://github.com/mozilla/pdf.js) | Apache-2.0 | Rasterising PDF pages |
+| [utif](https://github.com/photopea/UTIF.js) | MIT | Lazy TIFF pixel decoding |
 
-All three are permissive and compatible with redistributing this package under MIT
+All four are permissive and compatible with redistributing this package under MIT
 (pdf.js's Apache-2.0 is not copyleft). No proprietary SDK, paid API or external
 conversion service is used or required.
 

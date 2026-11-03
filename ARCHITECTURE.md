@@ -1,9 +1,10 @@
 # Architecture
 
-How `react-anydoc-viewer` turns a `.pptx`, `.docx`, `.xlsx`, `.pdf` or image file
-into pixels, and why
-it is built this way. This is the design record for the decisions taken in phase 1
-of the project (research and architecture selection); the code follows it.
+How `react-anydoc-viewer` turns presentations, documents, workbooks, PDFs, images,
+CSV/TSV tables and text files into pixels. This describes the implementation through
+0.2.3, including the worksheet view introduced after the original architecture
+selection. Historical proposals are kept separately in
+[FORMAT-EXPANSION.md](FORMAT-EXPANSION.md).
 
 The package was called `react-pptx-viewer` when presentations were all it opened.
 The name is now format-neutral, and so is the public API — `DocumentViewer`,
@@ -74,13 +75,14 @@ layout cost is paid once per slide.
 File | Blob | ArrayBuffer | Uint8Array | string | URL
         │
         ▼
-  loadPresentation   fetch + size cap, abort handling, error normalisation
+  loadDocument       fetch + size cap, abort handling, error normalisation
         │
         ▼
-  format             magic bytes → pdf | zip | ole; part names → pptx | docx | other
+  format             magic bytes → pdf | zip | ole | image | text; ZIP parts → pptx | docx | xlsx
         │
         ├─ raster ──────▶ image     header geometry + image or TIFF page renderer
         ├─ pdf ─────────▶ pdf       pdf.js document + a page renderer
+        ├─ text ────────▶ plaintext CSV → one worksheet; other text → pages
         │
         ▼ (zip)
   archive            ZIP index only (no inflate), safety limits, path validation
@@ -90,7 +92,7 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
         │
         ├─ pptx ────────▶ presentation   theme → master → layout → slides, media
         ├─ docx ────────▶ docx   styles → numbering → blocks → measure → pages
-        └─ xlsx ────────▶ xlsx   shared strings → styles → worksheets → grid pages
+        └─ xlsx ────────▶ xlsx   shared strings → styles → worksheets + drawings
         │
         ▼
   PresentationModel  plain data, no XML, no DOM
@@ -98,7 +100,8 @@ File | Blob | ArrayBuffer | Uint8Array | string | URL
         ▼
   React components   DocumentViewer → SlideCanvas → SlideView → RenderShape/RenderText/…
                      … or the format's own page renderer
-                        (PdfPage, TiffPage, ImagePage, TextPage, GridPage, SheetPage)
+                        (PdfPage, TiffPage, ImagePage, TextPage)
+                     … or worksheet tabs/tools → SheetPage (XLSX and CSV)
 ```
 
 The boundary that matters is the `PresentationModel`: the parsers produce plain
@@ -109,16 +112,15 @@ made the second and third formats cheap: a page of a Word document is a slide wh
 shapes are paragraphs, tables and pictures, so navigation, zoom, thumbnails,
 presentation mode and the error boundary came for free.
 
-Two seams keep the exotic formats out of the rest of the code:
+Shared parsing/rendering seams keep most format-specific work contained:
 
 - **`probePackage(names)`** decides *which* parser runs, from part names only — no
   extension, MIME type or file name is consulted anywhere in the pipeline.
 - **`PageRenderer`** (see `src/renderer/pageRenderer.ts`) lets a format draw a page
   itself instead of supplying shapes. `SlideCanvas` and `ThumbnailSidebar` call it
-  when it is present, so exactly one component knows that a PDF or TIFF page is a
-  canvas, that an image is an `<img>`, that a text file is monospace lines and that
-  a table or worksheet is a grid, and the zoom scale is fed into the rasterisation
-  so pages stay sharp.
+  for paginated formats. XLSX/CSV renderers also expose `worksheetPages`, allowing
+  `DocumentViewer` to use bottom tabs, internal scrolling and `WorksheetTools`
+  instead. Raster renderers receive the display scale to size their canvases.
   The context also carries the viewer's labels, so a renderer that wanted an
   accessible name of its own would not hard-code English.
 
@@ -128,8 +130,8 @@ identified by its magic bytes, a text file by the fact that it decodes as text
 from the content, because text has no signature). Both are dispatched before the
 ZIP path. An HTML file is the same bytes as any other text file and takes the same
 path: it is paginated as source, with a diagnostic naming what it is. No renderer
-in the library ever executes file content, so there is no HTML frame to reason
-about.
+in the library evaluates document scripts or formula text, so there is no HTML
+frame to reason about.
 
 ### Parser (`src/parser`)
 
@@ -150,8 +152,8 @@ about.
 | `ole.ts` | Identifies a compound file from its stream names (`Workbook`, `WordDocument`, `PowerPoint Document`, `EncryptedPackage`), so legacy binary files are reported by name instead of as "encrypted". |
 | `image.ts` | Header-only geometry for PNG/JPEG/GIF/BMP/WebP/SVG, the TIFF path (IFD pages + a canvas renderer), and the one-page model for a standalone image. |
 | `tiff.ts` | Bounded TIFF directory walking: page count and natural size from the IFD chain, without reading pixels. |
-| `xlsx/` | The SpreadsheetML front-end: `styles.ts` (number formats and dates), `model.ts` (the grid page data) and `index.ts` (workbook, relationships, shared strings, merged ranges, limits). |
-| `plaintext/` | The text front-end: `decode.ts` (BOM, UTF-8, UTF-16, Windows-1252 fallback), `classify.ts` (content-based classification and delimiter sniffing), `csv.ts` (quote-aware state machine), `paginate.ts` (wrapping and pagination) and `metrics.ts` (the page geometry and text metrics the page renderers import as well). |
+| `xlsx/` | `index.ts` assembles worksheets/limits; `styles.ts` handles numeric/date formats; `visualStyles.ts` maps fonts/fills/borders/alignment/theme colors; `drawings.ts` resolves anchors and chart/image relationships; `chartReferences.ts` supplies missing chart caches from internal worksheet ranges; `conditionalFormatting.ts` applies supported saved-value rules; `model.ts` defines cell/grid data. |
+| `plaintext/` | The text front-end: `decode.ts` (BOM, UTF-8, UTF-16, Windows-1252 fallback), `classify.ts` (content-based classification and delimiter sniffing), `csv.ts` (quote-aware state machine), `index.ts` (single CSV worksheet or text pages), `paginate.ts` (text wrapping and pagination) and `metrics.ts` (the page geometry and text metrics the page renderers import as well). |
 | `../formats.ts` | The format table: labels, extensions and MIME types, from which `SUPPORTED_EXTENSIONS`, `ACCEPT_ATTRIBUTE` and every "supported formats are …" message are generated. |
 | `presentation.ts` | Assembles everything: slide order from `sldIdLst`, layout/master resolution, inherited shape layers, background resolution, diagnostics. |
 | `docx/` | The whole Word front-end: `styles.ts` (style chain, doc defaults, numbering), `text.ts` (paragraphs → run/picture/page-break blocks), `table.ts`, `drawing.ts` (inline and anchored pictures), `layout.ts` (pagination) and `index.ts` (orchestration). |
@@ -160,8 +162,9 @@ about.
 Parsing is synchronous after the download for the three OOXML formats and produces
 one immutable model per source; the PDF path is asynchronous because pdf.js is
 (and, unlike the OOXML parsers, it is allowed to be — the viewer already awaits the
-load before committing it). Unsupported constructs become `Diagnostic` entries and,
-where the renderer can, a labelled node — never a silent omission.
+load before committing it). Many unsupported constructs become diagnostics and, where the renderer can, a
+labelled node. The compatibility matrix identifies features that are ignored
+without diagnostics as well.
 
 ### Renderer (`src/renderer`, `src/components`)
 
@@ -170,14 +173,15 @@ where the renderer can, a labelled node — never a silent omission.
 | `RenderShape.tsx` | Positioned box per shape: SVG geometry layer + HTML text layer, rotation/flips, groups, connectors, pictures with crop, unsupported placeholders. |
 | `RenderText.tsx` | Paragraphs as absolutely placed blocks inside a flex column (vertical anchor), inline runs as spans, bullets as positioned spans. |
 | `RenderTable.tsx` | Tables as absolutely positioned cells (merges produce the right spans). |
-| `RenderChart.tsx` | Charts redrawn from cached series data as accessible inline SVG (axes, gridlines, legend, data labels). |
+| `RenderChart.tsx` | Charts redrawn from parsed series data as inline SVG; exact values/hover details, labels, axes and legends. XLSX can synthesize series caches from internal ranges, leaving missing numeric points absent. Crowded category ticks are thinned without dropping points. |
 | `style.ts` | Shared mapping of model values to CSS/SVG (fills, gradients, dash arrays, shadows, ids). |
-| `pageRenderer.ts` | The seam a non-shape format implements: given a page, its natural size, the current scale and a `warn` callback, return a node. Nothing else in the viewer knows PDFs exist. |
+| `pageRenderer.ts` | The seam a non-shape format implements: given a page, its natural size, the current scale and a `warn` callback, return a node. Optional worksheet data lets the viewer choose the grid UI. |
 | `PdfPage.tsx` | The PDF implementation of that seam: sizes a canvas from the scale × device pixel ratio (capped for memory), renders one page with pdf.js, cancels on unmount, and turns a failure into a labelled notice plus a diagnostic. |
 | `TiffPage.tsx` | The TIFF implementation of that seam: imports the decoder on demand, decodes one directory to RGBA, draws it on a canvas, and reports a page it cannot decode. |
-| `SheetPage.tsx` | The worksheet implementation of that seam: a scrollable HTML grid with sticky row/column headers, merges and a truncation notice. |
+| `SheetPage.tsx` | Shared XLSX/CSV HTML grid: styling, merges, row/column headers, range selection/copy, saved scrolling and drawing overlays. XLSX uses stored heights and text spillover; CSV wraps at capped column widths with content-driven row heights. |
+| `WorksheetTools.tsx`, `worksheetUtils.ts` | Cross-sheet cell search (up to 500 matches), fit-to-width, clipboard copy with a two-second notice, and displayed-range CSV export. Export quotes fields and neutralizes formula-like text. |
 | `measureParagraph.ts` | Measures laid-out text with a hidden mirror DOM (`kind: "layout"`), and falls back to a metrics-based estimate (`kind: "estimate"`) where no DOM is available, for example in SSR or a test environment. |
-| `DocumentViewer.tsx` | Public component: loading state machine, slide/zoom/fit state, keyboard handling, imperative handle, diagnostics, thumbnails, fullscreen. Format-agnostic: it forwards `renderPage` and maps the parsed model into `DocumentInfo`. |
+| `DocumentViewer.tsx` | Public component: loading state machine, slide/zoom/fit state, keyboard handling, imperative handle, diagnostics, thumbnails, fullscreen. Paginated formats use `SlideCanvas`; XLSX/CSV use a measured worksheet viewport and tabs. It maps the parsed model into `DocumentInfo` and assigns worksheet panel IDs after mount for React 17 SSR compatibility. |
 | `SlideCanvas.tsx` | Scroll container, measurement, memoised slide view, per-slide error boundary — and the one line that delegates to a format's own page renderer. |
 | `ViewerToolbar.tsx` | The chrome itself: a compact floating pill centred at the bottom of the stage, revealed by `:hover`/`:focus-within` in the stylesheet so it needs no visibility state of its own. Presentation only; every action and every piece of state belongs to `DocumentViewer`. |
 | `ZoomMenu.tsx` | The zoom percentage and its dropdown of zoom stops and fit modes. The percentage and caret are one split button that opens on click or from the keyboard (never on hover), and it only calls back — it never owns the scale. |
@@ -215,13 +219,17 @@ user-uploaded files:
    its worker. TIFF directories are walked with bounds checks and decoded into a
    canvas only when the page is visible; a directory that points outside the input,
    loops forever or declares an absurd size is refused rather than followed.
-8. **One format registry, one dispatch**: the format is decided from the bytes, so
+8. **Spreadsheet actions**: drawing assets and chart range references stay within
+   the loaded archive. Formula text is not evaluated. CSV download and clipboard
+   copying are user-initiated local actions; CSV export quotes fields and prefixes
+   formula-like text with an apostrophe, while copied ranges preserve text.
+9. **One format registry, one dispatch**: the format is decided from the bytes, so
    there is no path where a file name influences which parser runs.
 
 ## Performance model
 
-- The archive is indexed once; each reusable part (theme, master, layout, chart,
-  style, numbering) is parsed at most once and memoised by part name.
+- The archive is indexed once. PPTX themes, masters, layouts and charts are
+  cached by part name; other formats have their own parsing paths.
 - Only relevant parts are inflated — embedded workbooks, notes and diagrams are
   never decompressed.
 - `pdfjs-dist` and the TIFF decoder are behind dynamic `import()`s, so they are
@@ -229,25 +237,31 @@ user-uploaded files:
   bundler code-splits. Neither appears in the library bundle (`external` in the
   build).
 - A `.docx` is paginated once, at load, by measuring each paragraph in a hidden
-  mirror DOM; the measurement buffers are reused and removed afterwards.
+  mirror DOM in batches of up to 4,000 paragraphs; the measurement buffers are
+  reused and removed afterwards.
 - Media bytes are turned into URLs on first use, so a deck with 200 images only
   creates URLs for the slide being looked at (thumbnails are lazy-mounted by an
   `IntersectionObserver`).
 - The visible slide is memoised; changing slides re-renders one slide.
-- The renderer never measures the DOM to place content: all geometry comes from
-  the file.
+- Slide geometry comes from the file. DOCX pagination measures text; worksheet
+  layout measures its viewport and lets CSV row heights follow wrapped content.
+- Worksheet rendering is capped, not virtualized: XLSX has a 10,000-cell grid
+  budget, and CSV uses the same displayed-cell cap after parsing. Selection updates
+  can rerender the active grid; inactive sheets are not mounted.
 
 ## Testing strategy
 
 - **Fixtures are generated, not checked in**: `tests/fixtures/pptx.ts` writes real
   OOXML packages (masters, layouts, themes, slides, media, charts) with `fflate`,
   `tests/fixtures/docx.ts` writes WordprocessingML packages, `tests/fixtures/xlsx.ts`
-  writes SpreadsheetML workbooks, `tests/fixtures/tiff.ts` writes real IFD-based
+  and `tests/fixtures/xlsxDashboard.ts` write SpreadsheetML workbooks with visual
+  styles, chart references, drawings and conditional formatting, `tests/fixtures/tiff.ts` writes real IFD-based
   TIFFs, and `tests/fixtures/pdf.ts` assembles a real PDF byte by byte (objects,
   xref, trailer, metadata). No proprietary file is redistributed, and every edge case (missing
   relationship, missing part, empty slide, unsupported media, unsafe hyperlink,
   renamed format, encrypted file) can be produced exactly.
-- **Parser tests** run without a DOM.
+- **Core parser tests** do not depend on browser layout; visual worksheet
+  regressions additionally exercise DOM output under jsdom.
 - **Renderer and component tests** run under jsdom and exercise the component
   through the DOM the user sees: clicking toolbar buttons, pressing keys, reading
   the accessibility tree. PDF tests inject a fake pdf.js document through the
@@ -278,5 +292,8 @@ user-uploaded files:
 - The style cascade is deliberately shallow: placeholder geometry and defaults are
   inherited, but PowerPoint's full style matrix (`fmtScheme` references, table
   styles) is approximated.
-- Thumbnails render the same component as the main view, so a 500-slide deck
-  mounts slides on demand but still parses all of them once.
+- Paginated-format thumbnails render the same page components as the main view.
+  Visited thumbnails currently remain mounted; their working set is not bounded.
+- Worksheet grids do not have virtualized rows or frozen panes. Search is limited
+  to rendered cell data; omitted rows are neither searchable nor exported. Worksheet
+  tool labels are currently English even when page-toolbar labels are localized.

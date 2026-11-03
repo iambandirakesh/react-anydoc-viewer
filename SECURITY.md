@@ -7,8 +7,7 @@ checks apply to all of them.
 
 ## Reporting a vulnerability
 
-Open a private security advisory on the repository (or email the maintainer listed
-in `package.json`) rather than a public issue. Please include the smallest `.pptx`
+Open a private security advisory on the repository (or a private contact channel the maintainer has provided) rather than a public issue. Please include the smallest supported document
 that reproduces the problem, the viewer version, and the browser. A first response
 should be expected within a few days; there is no bug-bounty programme.
 
@@ -31,10 +30,10 @@ patch or minor releases rather than backports.
 | **Cross-site data leakage** | The library makes no network requests of its own. Fetching happens only for a `source` you pass (with your `fetchOptions`, so you control credentials and CORS), and downloads are capped by `maxDownloadBytes`. |
 | **HTML files** | Shown as source text, paginated like any other text file: never parsed, never framed, never given an origin, so nothing in it can run or load. There is no rendering option to misuse — no iframe, no `srcdoc`, no `innerHTML` — and the file's own content is displayed as characters like any other text. An HTML file is the one format with no safe way to be *executed* here, so it is not executed at all. |
 | **Script from an uploaded image** | Every browser-decodable image, SVG included, is delivered as a blob/`data:` URL in an `<img>` element: scripts do not run there and the file cannot reach the host document. A TIFF is decoded by the viewer's own bounded reader and drawn as pixels on a canvas, never as markup. Vector metafiles a browser cannot decode (EMF, WMF) are refused with a named error. |
-| **Runaway work from a workbook** | Worksheet XML goes through the same archive limits and the same DOCTYPE/ENTITY refusal as every other part. Cells are capped (50 000 parsed, 10 000 rendered per sheet page), as are rows, columns and merged ranges, and hitting a cap emits a diagnostic instead of exhausting memory. Formula text is never evaluated; only the cached value is displayed. |
-| **Runaway work from a plain text or table file** | Text pages are capped at 1000 pages; a table keeps at most 20 000 rows and parses at most 8 MiB of characters. Both truncations are reported as diagnostics, so a host can refuse the file instead of accepting a partial view. Decoding is bounded by the archive limits and `maxDownloadBytes` for downloads. |
+| **Runaway work from a workbook** | Worksheet XML goes through the same archive limits and the same DOCTYPE/ENTITY refusal as every other part. Cells are capped (50 000 parsed, 10 000 rendered per worksheet), as are rows, columns and merged ranges, and hitting a cap emits a diagnostic instead of exhausting memory. Drawings are capped at 200 anchors per sheet and conditional formatting at 200 groups/rules. Formula text is never evaluated; only saved results are displayed. Chart range references resolve only within the loaded workbook, without fetching external workbooks or recalculating formulas. |
+| **Runaway work from a plain text or table file** | Text pages are capped at 1000 pages; CSV parsing keeps at most 20 000 data rows and parses at most 8 MiB of characters; the single table view displays at most 10 000 cells and 200 columns. Both truncations are reported as diagnostics, so a host can refuse the file instead of accepting a partial view. Decoding is bounded by the archive limits and `maxDownloadBytes` for downloads. |
 | **Misleading decoding of text** | A file that is not valid UTF-8 is decoded as Windows-1252 and reported: the viewer never silently substitutes characters, because a document that displays the wrong text without saying so is a security problem as well as a bug. |
-| **Table content executed as a formula** | Cell values are rendered as text, never interpreted. Values that begin with `=`, `+`, `-` or `@` are displayed literally; a host that exports them back to a spreadsheet must neutralise them itself (formula injection is an export concern). |
+| **Table content executed as a formula** | Cell values are rendered as text, never interpreted. Values that begin with `=`, `+`, `-` or `@` are displayed literally; the built-in CSV download quotes every field and prefixes formula-like text cells with an apostrophe (including leading whitespace). It exports only the displayed parsed range. Range copying preserves formatted text, so a host that re-exports clipboard data must apply its own formula-injection policy. |
 | **Resource leaks / memory growth** | Object URLs are tracked and revoked on unmount and on source change; in-flight loads are aborted (superseded loads never render); a destroyed PDF document proxy is released with the load; media is inflated on demand. |
 | **Denial of service through pathological files** | Deeply nested groups, thousands of shapes, huge tables, tens of thousands of paragraphs and pages that are never visited are bounded by the archive limits and by lazy rendering; unbounded recursion is not used when walking shape trees, and a page that throws is contained by an error boundary so one bad page cannot break the viewer. |
 | **Supply chain** | Runtime dependencies are `fflate` (MIT), `fast-xml-parser` (MIT), `pdfjs-dist` (Apache-2.0, Mozilla — the engine behind Firefox's PDF viewer) and `utif` (MIT, a small TIFF decoder). Nothing is fetched from a CDN at runtime, the package ships no post-install scripts, and both `pdfjs-dist` and `utif` are imported lazily, so they are only evaluated when a PDF or a TIFF is opened. |
@@ -56,8 +55,12 @@ patch or minor releases rather than backports.
   browser's image or font decoders, in pdf.js or in utif is a vulnerability of that
   library; keep `pdfjs-dist` and `utif` up to date and treat a `.pdf` or `.tiff` from
   an untrusted source with the same care as any file you would open in a browser.
+- **Clipboard and CSV downloads.** These are user-initiated local actions, not
+  uploads. The clipboard button uses the browser Clipboard API and may require
+  permission or a secure context; Ctrl/Cmd+C uses the selected range. Export and
+  copy contain visible parsed values, without workbook styles or formula evaluation.
 - **Encrypted or macro-enabled files.** Password-protected packages and VBA
-  macros are rejected or ignored, not analysed: a `.pptm`/`.docm` opens as a normal
+  macros are rejected or ignored, not analysed: a `.pptm`/`.docm`/`.xlsm` opens as a normal
   file with its macros never executed, and an encrypted package is refused with an
   `ENCRYPTED` error. A PDF with an empty-password encryption dictionary is opened by
   pdf.js without prompting, as a desktop reader would.

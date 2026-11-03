@@ -9,7 +9,12 @@ will be called out under **Changed**.
 
 ## [Unreleased]
 
-No unreleased changes recorded yet.
+### Changed
+
+- Audited all repository Markdown against 0.2.3. Updated worksheet/CSV controls,
+  copying and CSV export security, rendering limits, React 17 compatibility,
+  dependency attribution and manual publishing instructions. Clarified historical
+  benchmark results and superseded format-expansion proposals; no runtime changes.
 
 ## [0.2.3] — 2026-11-02
 
