@@ -12,4 +12,3 @@ test-results/
 # Local development artifacts
 .dev-demo.log
 .dev-demo.pid
-.freebuff/
