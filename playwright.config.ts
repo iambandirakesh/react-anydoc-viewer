@@ -8,9 +8,10 @@ import { defineConfig, devices } from "@playwright/test";
  * server is started automatically (and an already-running one on port 5273 is
  * reused, which is what `npm run dev` gives you).
  *
- * `channel: "chrome"` uses the Chrome already installed on the machine instead of
- * downloading a bundled browser. Remove it and run
- * `npx playwright install chromium` on a CI machine with no Chrome.
+ * Locally, `channel: "chrome"` uses the Chrome already installed on the machine
+ * instead of downloading a bundled browser. In CI (`CI` is set) the bundled
+ * Chromium is used, so runs are reproducible; the CI workflow installs it with
+ * `npx playwright install --with-deps chromium`.
  */
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -32,7 +33,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], channel: "chrome" },
+      use: { ...devices["Desktop Chrome"], ...(process.env.CI ? {} : { channel: "chrome" }) },
     },
   ],
   webServer: {

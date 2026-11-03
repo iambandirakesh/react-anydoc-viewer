@@ -490,8 +490,11 @@ test.describe("viewer chrome", () => {
       buffer: Buffer.from("id,name\n1,Ada\n2,Grace\n"),
     });
     await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
-    await expect(page.locator(".radv-canvas .radv-grid-page th").first()).toHaveText("id");
-    await expect(page.locator(".radv-canvas .radv-grid-page")).toContainText("Grace");
+    // A table opens as a single worksheet, in the workbook view rather than on a page.
+    const table = page.locator(".radv-workbook-viewport [data-testid='rv-sheet-page']");
+    await expect(table).toContainText("id");
+    await expect(table).toContainText("Grace");
+    await expect(page.getByRole("tab", { name: "Table" })).toHaveAttribute("aria-selected", "true");
     await expect(formatCell(page)).toHaveText("delimited text table");
 
     await input.setInputFiles({
@@ -677,9 +680,10 @@ test.describe("Workbooks and TIFF images", () => {
     await loadSample(page, "Load sample .xlsx");
     await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("Excel workbook");
     await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("2");
-    await expect(counter(page)).toHaveText("1 / 2");
+    // Worksheets are switched with tabs, not the page counter.
+    await expect(page.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
 
-    const grid = page.locator(".radv-canvas [data-testid='rv-sheet-page']");
+    const grid = page.locator(".radv-workbook-viewport [data-testid='rv-sheet-page']");
     await expect(grid).toBeVisible();
     await expect(grid).toContainText("Region");
     await expect(grid).toContainText("North");
@@ -689,9 +693,9 @@ test.describe("Workbooks and TIFF images", () => {
     await expect(grid.locator("td[colspan='4']")).toContainText("never recalculated");
     await expect(grid).toContainText("381420");
 
-    await page.getByRole("tab", { name: "Slide 2" }).click();
-    await expect(counter(page)).toHaveText("2 / 2");
-    await expect(page.locator(".radv-canvas [data-testid='rv-sheet-page']")).toContainText("Read-only grid");
+    await page.getByRole("tab", { name: "Notes" }).click();
+    await expect(page.getByRole("tab", { name: "Notes" })).toHaveAttribute("aria-selected", "true");
+    await expect(grid).toContainText("Read-only grid");
 
     expect(errors).toEqual([]);
   });
