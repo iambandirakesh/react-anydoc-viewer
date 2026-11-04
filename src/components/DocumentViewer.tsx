@@ -22,9 +22,10 @@ import {
   type ReactNode,
 } from "react";
 /**
- * The stylesheet is imported here (not from `index.ts`) so that the built
- * declarations never contain a CSS import: consumers would otherwise need a
- * `*.css` module declaration of their own to type-check the package.
+ * This import only tells the library build which stylesheet to emit: Vite
+ * extracts it to `dist/styles.css` and drops it from the published JS. The
+ * component does not load its own styles; consumers import
+ * `react-anydoc-viewer/styles.css` themselves.
  */
 import "../styles.css";
 import type { DocumentFormat } from "../errors";
