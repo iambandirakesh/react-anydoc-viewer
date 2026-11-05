@@ -360,10 +360,12 @@ presenting:
 Press `f` inside a slideshow to use the browser's fullscreen as well (which also
 hides the address bar); `enterPresentation()` and `enterFullscreen()` compose.
 
-For XLSX and CSV, presentation mode expands the worksheet view but keeps its tabs
-and grid tools. Clicks and page-navigation keys do not advance sheets; `Esc` exits.
-The floating **Present** button is not shown for these formats, so use the handle
-or the controlled `presentation` prop to enter this mode.
+For XLSX and CSV, the worksheet tools get a **Present** button instead (hidden by
+the same `showPresentationControl={false}`). A presented worksheet fills the viewport
+with only the grid and its sheet tabs: the search, copy, CSV and zoom controls are
+removed. The grid keeps the arrow keys and clicks for cell selection, so sheets are
+switched with the tabs rather than `Space` or the arrows; `Esc` exits. The hint uses
+the `sheetPresentationHint` label, and the button text is `presentSheet`.
 
 ## Imperative navigation
 
@@ -509,7 +511,7 @@ component.
 | `allowThumbnailToggle` | `boolean` | `showThumbnails` | Show the sidebar toggle button |
 | `presentation` | `boolean` | — | Controlled presentation (slideshow) mode |
 | `defaultPresentation` | `boolean` | `false` | Start in presentation mode |
-| `showPresentationControl` | `boolean` | `true` | Show the Present button in the toolbar |
+| `showPresentationControl` | `boolean` | `true` | Show the Present button in the toolbar (and in the worksheet tools for XLSX and CSV) |
 | `fit` | `"width" \| "height" \| "page" \| "actual" \| "none"` | `"page"` | Initial page scaling mode; worksheets start at 100% unless zoom is supplied, with a separate Fit width action |
 | `zoom` | `number` | — | Controlled scale (`1` is 100%) |
 | `defaultZoom` | `number` | — | Uncontrolled initial scale |

@@ -299,6 +299,12 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
         worksheetPages={worksheetPages}
         renderPage={renderPage}
         showControls={controlsVisible}
+        presenting={presenting}
+        present={
+          showPresentationControl
+            ? { label: labels.presentSheet, available: presentationMode.available, enter: presentationMode.enter }
+            : undefined
+        }
         loadId={loadId}
         rootRef={rootRef}
         viewportRef={containerRef}
@@ -413,7 +419,9 @@ export const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerPro
           className={`radv-present-hint${hintVisible ? " radv-present-hint-visible" : ""}`}
           data-testid="rv-present-hint"
         >
-          <span className="radv-present-text">{labels.presentationHint}</span>
+          <span className="radv-present-text">
+            {isWorkbook ? labels.sheetPresentationHint : labels.presentationHint}
+          </span>
           <span className="radv-present-counter">
             {labels.slideOf(slideCount === 0 ? 0 : slideIndex + 1, slideCount)}
           </span>

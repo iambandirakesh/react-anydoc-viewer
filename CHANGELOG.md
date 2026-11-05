@@ -13,6 +13,10 @@ will be called out under **Changed**.
 
 - `DocumentInfo.pageCount`, the format-neutral name for the page count passed to
   `onLoad`.
+- A **Present** button in the worksheet tools for XLSX and CSV. Presenting a
+  worksheet keeps only the grid and its sheet tabs; the search, copy, CSV and zoom
+  controls are hidden until `Esc` or **Exit presentation**. It follows
+  `showPresentationControl`. New labels: `presentSheet` and `sheetPresentationHint`.
 
 ### Deprecated
 

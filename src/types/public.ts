@@ -48,6 +48,10 @@ export interface ViewerLabels {
   exitPresentation: string;
   /** shown briefly when presentation mode starts */
   presentationHint: string;
+  /** the Present button in the worksheet tools (XLSX and CSV) */
+  presentSheet: string;
+  /** shown briefly when a worksheet is presented */
+  sheetPresentationHint: string;
   toggleThumbnails: string;
   thumbnails: string;
   slideOf: (current: number, total: number) => string;

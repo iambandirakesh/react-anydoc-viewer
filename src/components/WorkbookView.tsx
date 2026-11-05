@@ -15,7 +15,7 @@ import { emuToPx } from "../parser/units";
 import type { PageRenderer } from "../renderer/pageRenderer";
 import type { ViewerLabels } from "../types/public";
 import { MAX_ZOOM, MIN_ZOOM, type Zoom } from "../hooks/useZoom";
-import { WorksheetTools } from "./WorksheetTools";
+import { WorksheetTools, type WorksheetPresentControl } from "./WorksheetTools";
 
 /** width of the row-number column, which a "fit width" has to make room for */
 const ROW_HEADER_WIDTH_PX = 44;
@@ -31,6 +31,13 @@ export interface WorkbookViewProps {
   worksheetPages: readonly SheetPageData[] | undefined;
   renderPage: PageRenderer;
   showControls: boolean;
+  /**
+   * A presented sheet keeps only the grid and its tabs: the tabs are the one way
+   * to change sheet, because the grid owns the arrow keys.
+   */
+  presenting: boolean;
+  /** the Present button, when the host allows it */
+  present: WorksheetPresentControl | undefined;
   /** remounts the worksheet tools for every new document */
   loadId: number;
   rootRef: RefObject<HTMLDivElement | null>;
@@ -50,6 +57,8 @@ export function WorkbookView({
   worksheetPages,
   renderPage,
   showControls,
+  presenting,
+  present,
   loadId,
   rootRef,
   viewportRef,
@@ -80,7 +89,7 @@ export function WorkbookView({
 
   return (
     <div className="radv-workbook">
-      {showControls && worksheetPages && (
+      {showControls && !presenting && worksheetPages && (
         <WorksheetTools
           key={loadId}
           pages={worksheetPages}
@@ -88,6 +97,7 @@ export function WorkbookView({
           navigate={goToSheet}
           root={rootRef}
           fitWidth={fitWidth}
+          present={present}
         />
       )}
 
@@ -144,7 +154,7 @@ export function WorkbookView({
             </button>
           ))}
         </div>
-        {showControls && (
+        {showControls && !presenting && (
           <div className="radv-workbook-zoom">
             <button type="button" aria-label="Zoom out" onClick={zoom.zoomOut} disabled={zoom.scale <= MIN_ZOOM}>
               −
