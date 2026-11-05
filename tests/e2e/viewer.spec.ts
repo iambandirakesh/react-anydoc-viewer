@@ -15,8 +15,8 @@ import { TINY_JPEG, buildBmp } from "../fixtures/images";
 const SAMPLE_SLIDES = 8;
 
 async function loadSampleDeck(page: Page): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Load sample deck" }).first().click();
+  await page.goto("/?sample=none");
+  await page.getByRole("button", { name: "Slides .pptx" }).first().click();
   await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
   await expect(page.locator(".radv-counter")).toHaveText(`1 / ${SAMPLE_SLIDES}`);
 }
@@ -357,9 +357,27 @@ test.describe("viewer chrome", () => {
     expect(hovered).not.toBeCloseTo(resting, 3);
   });
 
+  test("the demo's issue report carries diagnostics but never the file name", async ({ page }) => {
+    await page.goto("/?sample=none");
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "private-board-minutes.pptx",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
+    });
+    await expect(page.locator(".demo__stats dd").last()).toContainText("NOT_A_PRESENTATION");
+
+    const href = await page.locator(".pg__report").getAttribute("href");
+    const url = new URL(href!);
+    expect(url.pathname).toBe("/iambandirakesh/react-anydoc-viewer/issues/new");
+    expect(url.searchParams.get("template")).toBe("bug_report.yml");
+    expect(url.searchParams.get("diagnostics")).toContain("NOT_A_PRESENTATION");
+    expect(url.searchParams.get("environment")).toContain("a .pptx file");
+    expect(href).not.toContain("private");
+  });
+
   test("the demo drives presentation mode through its own control", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Load sample deck" }).first().click();
+    await page.goto("/?sample=none");
+    await page.getByRole("button", { name: "Slides .pptx" }).first().click();
     await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
 
     const toggle = page.getByRole("checkbox", { name: "Presentation mode" });
@@ -374,9 +392,9 @@ test.describe("viewer chrome", () => {
   });
 
   test("shows diagnostics for unsupported content in debug mode", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     await page.getByRole("checkbox", { name: /Debug mode/ }).check();
-    await page.getByRole("button", { name: "Load sample deck" }).first().click();
+    await page.getByRole("button", { name: "Slides .pptx" }).first().click();
     await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
 
     const panel = page.locator(".radv-diagnostics");
@@ -435,8 +453,12 @@ test.describe("viewer chrome", () => {
 
     // Re-fitting happens in a ResizeObserver callback, so poll rather than reading
     // the box immediately after the viewport changes.
-    await page.setViewportSize({ width: 900, height: 800 });
-    await expect.poll(async () => Math.round((await size()).height)).toBeGreaterThan(0);
+    // Narrow enough that the stacked demo layout gives the slide less room; wait
+    // for the re-fit before measuring, or the old size is read back.
+    await expect.poll(async () => Math.round((await size()).width)).toBeGreaterThan(0);
+    const initial = await size();
+    await page.setViewportSize({ width: 640, height: 800 });
+    await expect.poll(async () => Math.round((await size()).width)).toBeLessThan(initial.width - 1);
     const narrow = await size();
 
     await page.setViewportSize({ width: 1600, height: 900 });
@@ -453,7 +475,7 @@ test.describe("viewer chrome", () => {
   const formatCell = (page: Page) => page.locator(".demo__stats dd").nth(1);
 
   test("loads a user-provided file and reports a broken one", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     const input = page.locator('input[type="file"]');
 
     // Binary bytes that are neither a package nor text: the viewer must explain
@@ -481,7 +503,7 @@ test.describe("viewer chrome", () => {
   });
 
   test("opens a table, a text file and an image uploaded by the user", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     const input = page.locator('input[type="file"]');
 
     await input.setInputFiles({
@@ -534,7 +556,7 @@ test.describe("viewer chrome", () => {
 
 /** Load a generated document from the demo's own toolbar. */
 async function loadSample(page: Page, name: string): Promise<void> {
-  await page.goto("/");
+  await page.goto("/?sample=none");
   await page.getByRole("button", { name }).first().click();
   await expect(page.locator(".radv-root")).toHaveAttribute("data-status", "ready");
 }
@@ -547,7 +569,7 @@ test.describe("Word documents", () => {
     });
     page.on("pageerror", (error) => errors.push(error.message));
 
-    await loadSample(page, "Load sample .docx");
+    await loadSample(page, "Document .docx");
     await page.getByRole("checkbox", { name: /Debug mode/ }).check();
 
     await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("Word document");
@@ -605,7 +627,7 @@ test.describe("PDF documents", () => {
     });
     page.on("pageerror", (error) => errors.push(error.message));
 
-    await loadSample(page, "Load sample .pdf");
+    await loadSample(page, "PDF .pdf");
     await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("PDF document");
     await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("3");
     await expect(counter(page)).toHaveText("1 / 3");
@@ -658,7 +680,7 @@ test.describe("PDF documents", () => {
   });
 
   test("explains a file that only claims to be a PDF", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     await page.locator('input[type="file"]').setInputFiles({
       name: "broken.pdf",
       mimeType: "application/pdf",
@@ -677,7 +699,7 @@ test.describe("Workbooks and TIFF images", () => {
     });
     page.on("pageerror", (error) => errors.push(error.message));
 
-    await loadSample(page, "Load sample .xlsx");
+    await loadSample(page, "Workbook .xlsx");
     await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("Excel workbook");
     await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("2");
     // Worksheets are switched with tabs, not the page counter.
@@ -701,7 +723,7 @@ test.describe("Workbooks and TIFF images", () => {
   });
 
   test("presents a worksheet from the worksheet tools", async ({ page }) => {
-    await loadSample(page, "Load sample .xlsx");
+    await loadSample(page, "Workbook .xlsx");
     const root = page.locator(".radv-root");
     await page.getByRole("button", { name: "Present", exact: true }).click();
     await expect(root).toHaveAttribute("data-presenting", "true");
@@ -724,7 +746,7 @@ test.describe("Workbooks and TIFF images", () => {
     });
     page.on("pageerror", (error) => errors.push(error.message));
 
-    await loadSample(page, "Load sample .tiff");
+    await loadSample(page, "Scan .tiff");
     await expect(page.locator('.demo__stats dt:has-text("Format") + dd')).toHaveText("image");
     await expect(page.locator('.demo__stats dt:has-text("Slides / pages") + dd')).toHaveText("2");
     await expect(counter(page)).toHaveText("1 / 2");
@@ -775,7 +797,7 @@ test.describe("Workbooks and TIFF images", () => {
 
 test.describe("Every advertised format", () => {
   test("opens each image extension and each text extension", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     const input = page.locator('input[type="file"]');
 
     for (const [name, mimeType, buffer] of [
@@ -800,7 +822,7 @@ test.describe("Every advertised format", () => {
   });
 
   test("names each legacy binary instead of guessing", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     const input = page.locator('input[type="file"]');
 
     /** The same minimal compound file the OLE unit tests use: a header and a stream name. */
@@ -840,7 +862,7 @@ test.describe("HTML files", () => {
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("response", (response) => responses.push(response.url()));
 
-    await page.goto("/");
+    await page.goto("/?sample=none");
     await page.locator('input[type="file"]').setInputFiles({
       name: "hostile.html",
       mimeType: "text/html",
@@ -876,8 +898,8 @@ test.describe("HTML files", () => {
 });
 
 test("worksheet layout stays contained and chart anchors follow row dimensions", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Load XLSX dashboard" }).click();
+  await page.goto("/?sample=none");
+  await page.getByRole("button", { name: "Dashboard .xlsx" }).click();
   await expect(page.getByRole("tab", { name: "Dashboard" })).toHaveAttribute("aria-selected", "true");
   const metrics = await page.evaluate(() => {
     const root = document.querySelector(".radv-root")!.getBoundingClientRect();

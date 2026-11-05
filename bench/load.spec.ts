@@ -195,7 +195,7 @@ const RUNS = Number(process.env.BENCH_RUNS ?? 3);
 test("thumbnail working set after browsing", async ({ page }) => {
   test.skip(process.env.BENCH_BROWSE !== "1", "set BENCH_BROWSE=1 to measure retained thumbnails");
   for (const item of cases()) {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     await load(page, item.name, item.mimeType, item.buffer);
     const footprint = () => page.evaluate(() => ({
       renderedThumbnails: document.querySelectorAll('.radv-thumb-scale > *').length,
@@ -233,7 +233,7 @@ test("median load time per format", async ({ page }) => {
     );
   }
 
-  await page.goto("/");
+  await page.goto("/?sample=none");
   // Warm the dev server and the React module graph so the first run is not paying
   // for compilation.
   await load(page, "warmup.pptx", "application/octet-stream", Buffer.from([1, 2, 3]));
@@ -243,7 +243,7 @@ test("median load time per format", async ({ page }) => {
     const paint: number[] = [];
     const rasterReady: number[] = [];
     for (let run = 0; run < RUNS; run += 1) {
-      await page.goto("/");
+      await page.goto("/?sample=none");
       const marks = await load(page, item.name, item.mimeType, item.buffer);
       if (marks.ready === undefined || marks.change === undefined) {
         console.log(`  !! ${item.name} did not reach ready (status=${marks.status})`);
@@ -288,11 +288,11 @@ test("cpu profile hotspots", async ({ page }) => {
   const session = await page.context().newCDPSession(page);
   await session.send("Profiler.enable");
   await session.send("Profiler.setSamplingInterval", { interval: 200 });
-  await page.goto("/");
+  await page.goto("/?sample=none");
   await load(page, "warmup.pptx", "application/octet-stream", Buffer.from([1, 2, 3]));
 
   for (const item of cases()) {
-    await page.goto("/");
+    await page.goto("/?sample=none");
     await arm(page);
     await session.send("Profiler.start");
     await upload(page, item.name, item.mimeType, item.buffer);

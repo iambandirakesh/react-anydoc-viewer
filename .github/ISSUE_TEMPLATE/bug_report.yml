@@ -1,0 +1,50 @@
+name: Bug report
+description: A file renders wrongly, fails to open, or the viewer misbehaves.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The demo's **Report an issue** button fills in the environment and diagnostics for you.
+        Please do not attach files that contain private or confidential information.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect to see, and what did you see instead? Screenshots help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps, a minimal code sample, or a sample file that shows the problem (only if it is safe to share).
+      placeholder: |
+        1. Open the attached file in the demo
+        2. Go to page 3
+        3. The table is missing its borders
+  - type: dropdown
+    id: format
+    attributes:
+      label: File format
+      options:
+        - PowerPoint (.pptx)
+        - Word (.docx)
+        - Excel (.xlsx / .xlsm)
+        - PDF
+        - Image (including TIFF)
+        - CSV / TSV
+        - Text (.txt, .json, .md, .html, .log)
+        - Not format specific
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Package version, React version, browser and OS.
+      render: text
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: The error and diagnostics the viewer reported (turn on `debug` to see them).
+      render: text
