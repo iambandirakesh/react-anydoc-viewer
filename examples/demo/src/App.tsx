@@ -1,393 +1,430 @@
 /**
- * Demo application.
+ * Demo site.
  *
- * Loads either the built-in sample deck (generated in the browser) or a `.pptx`
- * file dropped onto the page, and exposes the viewer options that matter most
- * while evaluating the library.
+ * A landing page around the live playground: what the library is, a viewer to try
+ * every format in, what it supports, and how to install it. Every sample is
+ * generated in the browser, so the site makes no document requests at all.
  */
 
-import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import {
-  ACCEPT_ATTRIBUTE,
-  DocumentViewer,
-  detectPdfEngine,
-  type FitMode,
-  type DocumentViewerErrorType,
-  type DocumentViewerHandle,
-  type DocumentInfo,
-} from "react-anydoc-viewer";
+import { useEffect, useState, type ReactNode } from "react";
+import { version } from "react-anydoc-viewer";
+import { Playground } from "./Playground";
+import { Code, useCopy } from "./Code";
+import { GITHUB_URL } from "./report";
+
+const NPM_URL = "https://www.npmjs.com/package/react-anydoc-viewer";
+const INSTALL = "npm install react-anydoc-viewer";
+
+const USAGE = `import { DocumentViewer } from "react-anydoc-viewer";
 import "react-anydoc-viewer/styles.css";
-import { SAMPLE_FILE_NAME, buildSampleDeck } from "./sampleDeck";
-import {
-  DOCX_MIME,
-  SAMPLE_DOCX_FILE_NAME,
-  SAMPLE_PDF_FILE_NAME,
-  buildSampleDocument,
-  buildSamplePdf,
-} from "./sampleDocument";
-import { buildXlsx } from "../../../tests/fixtures/xlsx";
-import { buildDashboardWorkbook } from "../../../tests/fixtures/xlsxDashboard";
-import { buildTiff } from "../../../tests/fixtures/tiff";
 
-const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const PDF_MIME = "application/pdf";
-const TIFF_MIME = "image/tiff";
-const SAMPLE_XLSX_FILE_NAME = "sample-workbook.xlsx";
-const SAMPLE_TIFF_FILE_NAME = "sample-scan.tiff";
+export function Preview({ file }: { file: File }) {
+  // The viewer fills its parent, so give the parent a height.
+  return (
+    <div style={{ height: "80vh" }}>
+      <DocumentViewer file={file} />
+    </div>
+  );
+}`;
 
-const FORMAT_LABELS: Record<string, string> = {
-  pptx: "PowerPoint presentation",
-  docx: "Word document",
-  xlsx: "Excel workbook",
-  pdf: "PDF document",
-  image: "image",
-  csv: "delimited text table",
-  text: "text file",
-};
+const CONTROLLED = `const viewer = useRef<DocumentViewerHandle>(null);
 
-/**
- * pdf.js ships two builds and refuses to pair an API with the other build's
- * worker, so the demo publishes the worker that matches this browser. Both
- * specifiers are written out literally because the bundler has to see them.
- */
-const PDF_WORKER_SRC =
-  detectPdfEngine() === "legacy"
-    ? new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).href
-    : new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).href;
+<DocumentViewer
+  ref={viewer}
+  file="/reports/q3.pptx"
+  fit="width"
+  onLoad={(info) => console.log(info.format, info.pageCount)}
+  onSlideChange={setPage}
+/>
 
-/** A workbook with the value kinds a reader meets: text, numbers, dates, percentages, formulas and merges. */
-function buildSampleWorkbook(): Uint8Array {
-  return buildXlsx({
-    title: "Quarterly numbers",
-    creator: "react-anydoc-viewer",
-    sheets: [
-      {
-        name: "Summary",
-        cols: [
-          { min: 1, max: 1, width: 22 },
-          { min: 2, max: 4, width: 16 },
-        ],
-        merges: ["A6:D6"],
-        rows: [
-          ["Region", "Revenue", "Growth", "Updated"],
-          ["North", 128400, { type: "percent", value: 0.128 }, { type: "date", serial: 45292 }],
-          ["South", 98120, { type: "percent", value: -0.041 }, { type: "date", serial: 45292 }],
-          ["East", 154900, { type: "percent", value: 0.203 }, { type: "date", serial: 45292 }],
-          ["Total", { type: "formula", formula: "SUM(B2:B4)", value: 381420 }, null, null],
-          ["Formulas show the cached value; they are never recalculated in the browser.", null, null, null],
-        ],
-      },
-      {
-        name: "Notes",
-        rows: [
-          ["Read-only grid"],
-          ["Dates and percentages come from the cell's number format"],
-          ["Merged cells keep their spans"],
-          ["Hidden sheets and charts are reported, not drawn"],
-        ],
-      },
-    ],
-  });
+viewer.current?.togglePresentation();`;
+
+type Theme = "light" | "dark";
+
+function readTheme(): Theme {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 }
 
-/** A two-page uncompressed RGB TIFF, so the canvas decoder has a real file to draw. */
-function buildSampleTiff(): Uint8Array {
-  return buildTiff({
-    pages: [
-      { width: 480, height: 300, rgb: [214, 69, 65] },
-      { width: 480, height: 300, rgb: [38, 84, 124] },
-    ],
-  });
+function Icon({ d }: { d: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+
+const FEATURES: { title: string; body: string; icon: string }[] = [
+  {
+    title: "Nothing leaves the browser",
+    body: "Files are parsed and drawn on the device. No server, no API key, no conversion service and no upload.",
+    icon: "M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6zM9 12l2 2 4-4",
+  },
+  {
+    title: "One component, every format",
+    body: "Slides, Word, Excel, PDF, images, CSV and text share one toolbar, zoom, thumbnails, keyboard map and API.",
+    icon: "M4 5h7v7H4zM13 5h7v7h-7zM4 14h7v5H4zM13 14h7v5h-7z",
+  },
+  {
+    title: "Free, with no watermark",
+    body: "MIT licensed. No licence key, no trial banner, no usage limit — ship it in commercial apps as it is.",
+    icon: "M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+  },
+  {
+    title: "Safe with untrusted files",
+    body: "The format is read from the bytes, archives have size limits, SVG is an <img> and HTML is only ever shown as source.",
+    icon: "M5 11V8a7 7 0 0 1 14 0v3M4 11h16v10H4zM12 15v2",
+  },
+  {
+    title: "Presentation mode",
+    body: "A full-screen slideshow for decks, documents and sheets, driven by click, keyboard or your own controls.",
+    icon: "M3 4h18v12H3zM8 20h8M12 16v4M10 8l4 2-4 2z",
+  },
+  {
+    title: "Light on your bundle",
+    body: "pdf.js stays out of the bundle and is fetched only when a PDF is opened. ESM, CJS and UMD for React 17 to 19.",
+    icon: "M13 2 4 14h7l-1 8 9-12h-7z",
+  },
+];
+
+const FORMATS: { name: string; badge: string; tagline: string; exts: string[]; tone: string; points: string[] }[] = [
+  {
+    name: "PowerPoint",
+    badge: "PPTX",
+    tagline: "Slides and decks",
+    exts: [".pptx"],
+    tone: "orange",
+    points: ["Themes, text and shapes", "Images, groups and tables", "Charts from cached data", "Thumbnails and slideshow"],
+  },
+  {
+    name: "Word",
+    badge: "DOCX",
+    tagline: "Paginated documents",
+    exts: [".docx"],
+    tone: "blue",
+    points: ["Paginated in the browser", "Headings, lists and tables", "Pictures and page breaks", "Same viewer as slides"],
+  },
+  {
+    name: "Excel",
+    badge: "XLSX",
+    tagline: "Styled workbooks",
+    exts: [".xlsx", ".xlsm"],
+    tone: "green",
+    points: ["Fonts, fills, borders, merges", "Number formats and dates", "Charts, images, data bars", "Search, copy, CSV export"],
+  },
+  {
+    name: "PDF",
+    badge: "PDF",
+    tagline: "Rendered by pdf.js",
+    exts: [".pdf"],
+    tone: "red",
+    points: ["Mozilla’s PDF engine", "Sharp at every zoom level", "Loaded only when needed", "Optional worker"],
+  },
+  {
+    name: "Images",
+    badge: "IMG",
+    tagline: "Raster, vector and scans",
+    exts: [".png", ".jpg", ".gif", ".webp", ".avif", ".bmp", ".svg", ".tiff"],
+    tone: "violet",
+    points: ["Sized from the file header", "Multi-page TIFF on canvas", "SVG can never run script", "Zoom and fit modes"],
+  },
+  {
+    name: "Tables & text",
+    badge: "CSV",
+    tagline: "Delimited data and plain text",
+    exts: [".csv", ".tsv", ".txt", ".json", ".md", ".log", ".html"],
+    tone: "slate",
+    points: ["Delimiter detected from content", "JSON pretty-printed", "HTML shown as source", "Encoding detection"],
+  },
+];
+
+function HeroArt() {
+  return (
+    <div className="art" aria-hidden="true">
+      <div className="art__card art__card--sheet">
+        <div className="art__label">
+          <b className="tone-green">XLSX</b> revenue.xlsx
+        </div>
+        <div className="art__grid">
+          {Array.from({ length: 24 }, (_, index) => (
+            <i key={index} className={index < 4 ? "h" : index % 4 === 3 ? "n" : ""} />
+          ))}
+        </div>
+      </div>
+      <div className="art__card art__card--doc">
+        <div className="art__label">
+          <b className="tone-blue">DOCX</b> proposal.docx
+        </div>
+        <div className="art__lines">
+          <i className="t" />
+          <i />
+          <i />
+          <i className="s" />
+          <i />
+          <i className="s" />
+        </div>
+      </div>
+      <div className="art__card art__card--slide">
+        <div className="art__label">
+          <b className="tone-orange">PPTX</b> launch.pptx
+        </div>
+        <div className="art__slide">
+          <div className="art__title" />
+          <div className="art__bars">
+            <i style={{ height: "38%" }} />
+            <i style={{ height: "62%" }} />
+            <i style={{ height: "48%" }} />
+            <i style={{ height: "84%" }} />
+            <i style={{ height: "70%" }} />
+          </div>
+        </div>
+        <div className="art__toolbar">
+          <i />
+          <span>3 / 12</span>
+          <i />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ id, eyebrow, title, lead, children }: { id: string; eyebrow: string; title: string; lead?: ReactNode; children: ReactNode }) {
+  return (
+    <section id={id} className="section">
+      <div className="section__head">
+        <p className="eyebrow">{eyebrow}</p>
+        <h2>{title}</h2>
+        {lead ? <p className="lead">{lead}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
 }
 
 export function App() {
-  const [source, setSource] = useState<File | null>(null);
-  const [sourceLabel, setSourceLabel] = useState("No file loaded");
-  const [showThumbnails, setShowThumbnails] = useState(true);
-  const [debug, setDebug] = useState(false);
-  const [dark, setDark] = useState(false);
-  const [presenting, setPresenting] = useState(false);
-  const [fit, setFit] = useState<FitMode>("page");
-  const [info, setInfo] = useState<DocumentInfo | null>(null);
-  const [error, setError] = useState<DocumentViewerErrorType | null>(null);
-  const [slide, setSlide] = useState(0);
-  const [dragActive, setDragActive] = useState(false);
-  const [buildError, setBuildError] = useState<string | null>(null);
-  const viewer = useRef<DocumentViewerHandle>(null);
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  const [copied, copy] = useCopy();
 
-  const loadBytes = useCallback(
-    (bytes: Uint8Array, name: string, type: string) => {
-      const file = new File([bytes as BlobPart], name, { type });
-      setSource(file);
-      setSourceLabel(`${name} (${Math.round(bytes.byteLength / 1024)} KB, generated here)`);
-      setBuildError(null);
-    },
-    [],
-  );
-
-  const loadSample = useCallback(() => {
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
     try {
-      loadBytes(buildSampleDeck(), SAMPLE_FILE_NAME, PPTX_MIME);
-    } catch (cause) {
-      setBuildError(cause instanceof Error ? cause.message : String(cause));
+      localStorage.setItem("radv-demo-theme", theme);
+    } catch {
+      // Storage can be unavailable (private mode); the theme then lasts the visit.
     }
-  }, [loadBytes]);
-
-  const loadSampleDocx = useCallback(() => {
-    try {
-      loadBytes(buildSampleDocument(), SAMPLE_DOCX_FILE_NAME, DOCX_MIME);
-    } catch (cause) {
-      setBuildError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [loadBytes]);
-
-  const loadSamplePdf = useCallback(() => {
-    try {
-      loadBytes(buildSamplePdf(), SAMPLE_PDF_FILE_NAME, PDF_MIME);
-    } catch (cause) {
-      setBuildError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [loadBytes]);
-
-  const loadSampleXlsx = useCallback(() => {
-    try {
-      loadBytes(buildSampleWorkbook(), SAMPLE_XLSX_FILE_NAME, XLSX_MIME);
-    } catch (cause) {
-      setBuildError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [loadBytes]);
-
-  const loadSampleTiff = useCallback(() => {
-    try {
-      loadBytes(buildSampleTiff(), SAMPLE_TIFF_FILE_NAME, TIFF_MIME);
-    } catch (cause) {
-      setBuildError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [loadBytes]);
-
-  const accept = useCallback((file: File | undefined) => {
-    if (!file) return;
-    setSource(file);
-    setSourceLabel(`${file.name} (${Math.round(file.size / 1024)} KB)`);
-  }, []);
-
-  const onPick = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      accept(event.target.files?.[0]);
-    },
-    [accept],
-  );
-
-  const onDrop = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      setDragActive(false);
-      accept(event.dataTransfer.files?.[0]);
-    },
-    [accept],
-  );
-
-  const onLoad = useCallback((loaded: DocumentInfo) => {
-    setInfo(loaded);
-    setError(null);
-  }, []);
-
-  const onError = useCallback((viewerError: DocumentViewerErrorType) => {
-    setError(viewerError);
-    setInfo(null);
-  }, []);
-
-  const snippet = useMemo(
-    () =>
-      `<DocumentViewer
-  file={pptxFile}${showThumbnails ? "" : "\n  showThumbnails={false}"}${debug ? "\n  debug" : ""}${
-        dark ? "\n  dark" : ""
-      }${fit !== "page" ? `\n  fit="${fit}"` : ""}
-  onLoad={(info) => …}
-  onError={(error) => …}
-  onSlideChange={(index) => …}
-/>`,
-    [dark, debug, fit, showThumbnails],
-  );
+  }, [theme]);
 
   return (
-    <div className="demo" data-theme={dark ? "dark" : "light"}>
-      <header className="demo__header">
-        <div>
-          <h1>react-anydoc-viewer</h1>
-          <p>
-            A free, watermark-free React viewer for <code>.pptx</code>, <code>.docx</code>, <code>.xlsx</code>,
-            <code>.pdf</code>, images (TIFF included), <code>.csv</code> and text files. Everything renders from
-            the file in your browser — no server, no API key, no conversion service.
-          </p>
-        </div>
-        <div className="demo__header-actions">
-          <button type="button" className="demo__button demo__button--primary" onClick={loadSample}>
-            Load sample deck
-          </button>
-          <button type="button" className="demo__button" onClick={loadSampleDocx}>
-            Load sample .docx
-          </button>
-          <button type="button" className="demo__button" onClick={loadSamplePdf}>
-            Load sample .pdf
-          </button>
-          <button type="button" className="demo__button" onClick={loadSampleXlsx}>
-            Load sample .xlsx
-          </button>
-          <button type="button" className="demo__button" onClick={() => loadBytes(buildDashboardWorkbook(), "sample-dashboard.xlsx", XLSX_MIME)}>
-            Load XLSX dashboard
-          </button>
-          <button type="button" className="demo__button" onClick={loadSampleTiff}>
-            Load sample .tiff
-          </button>
-          <label className="demo__button">
-            Open a file
-            {/* The picker's filter comes from the library, so it can never disagree
-                with what the viewer actually opens. */}
-            <input type="file" accept={ACCEPT_ATTRIBUTE} onChange={onPick} />
-          </label>
+    <div className="site">
+      <header className="nav">
+        <div className="nav__inner">
+          <a className="brand" href="#top">
+            <span className="brand__mark" aria-hidden="true" />
+            react-anydoc-viewer
+          </a>
+          <nav className="nav__links" aria-label="Sections">
+            <a href="#playground">Playground</a>
+            <a href="#features">Features</a>
+            <a href="#formats">Formats</a>
+            <a href="#start">Quick start</a>
+            <a className="nav__report" href={`${GITHUB_URL}/issues/new/choose`} target="_blank" rel="noreferrer">
+              Report an issue
+            </a>
+          </nav>
+          <div className="nav__actions">
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              <Icon
+                d={
+                  theme === "dark"
+                    ? "M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"
+                    : "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"
+                }
+              />
+            </button>
+            <a className="btn btn--ghost btn--sm" href={NPM_URL} target="_blank" rel="noreferrer">
+              npm
+            </a>
+            <a className="btn btn--ghost btn--sm" href={GITHUB_URL} target="_blank" rel="noreferrer">
+              <svg viewBox="0 0 16 16" aria-hidden="true" className="gh">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+              </svg>
+              GitHub
+            </a>
+          </div>
         </div>
       </header>
 
-      <div className="demo__body">
-        <aside className="demo__panel">
-          <h2>Options</h2>
-          <label className="demo__check">
-            <input type="checkbox" checked={showThumbnails} onChange={(e) => setShowThumbnails(e.target.checked)} />
-            Thumbnail sidebar
-          </label>
-          <label className="demo__check">
-            <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
-            Debug mode (diagnostics panel)
-          </label>
-          <label className="demo__check">
-            <input type="checkbox" checked={dark} onChange={(e) => setDark(e.target.checked)} />
-            Dark chrome
-          </label>
-          <label className="demo__check">
-            <input
-              type="checkbox"
-              checked={presenting}
-              onChange={(e) => setPresenting(e.target.checked)}
-            />
-            Presentation mode
-          </label>
-          <label className="demo__field">
-            Fit
-            <select value={fit} onChange={(e) => setFit(e.target.value as FitMode)}>
-              <option value="page">page</option>
-              <option value="width">width</option>
-              <option value="height">height</option>
-              <option value="actual">actual</option>
-              <option value="none">none</option>
-            </select>
-          </label>
-
-          <h2>Programmatic control</h2>
-          <div className="demo__row">
-            <button type="button" className="demo__button" onClick={() => viewer.current?.first()}>
-              first()
-            </button>
-            <button type="button" className="demo__button" onClick={() => viewer.current?.previous()}>
-              previous()
-            </button>
-            <button type="button" className="demo__button" onClick={() => viewer.current?.next()}>
-              next()
-            </button>
-            <button type="button" className="demo__button" onClick={() => viewer.current?.last()}>
-              last()
-            </button>
-            <button type="button" className="demo__button" onClick={() => viewer.current?.zoomIn()}>
-              zoomIn()
-            </button>
-            <button type="button" className="demo__button" onClick={() => viewer.current?.resetZoom()}>
-              resetZoom()
-            </button>
-            <button
-              type="button"
-              className="demo__button"
-              onClick={() => viewer.current?.togglePresentation()}
-            >
-              togglePresentation()
-            </button>
-          </div>
-
-          <h2>State</h2>
-          <dl className="demo__stats">
-            <dt>Source</dt>
-            <dd>{sourceLabel}</dd>
-            <dt>Format</dt>
-            <dd>{info ? (FORMAT_LABELS[info.format] ?? info.format) : "—"}</dd>
-            <dt>Slides / pages</dt>
-            <dd>{info ? info.pageCount : "—"}</dd>
-            <dt>Size</dt>
-            <dd>{info ? `${(info.widthEmu / 914400).toFixed(2)}in × ${(info.heightEmu / 914400).toFixed(2)}in` : "—"}</dd>
-            <dt>Aspect</dt>
-            <dd>{info ? info.aspectRatio.toFixed(3) : "—"}</dd>
-            <dt>Current slide</dt>
-            <dd>{info ? `${slide + 1} / ${info.slideCount}` : "—"}</dd>
-            <dt>Diagnostics</dt>
-            <dd>{info ? info.diagnostics.length : "—"}</dd>
-            <dt>Presenting</dt>
-            <dd>{presenting ? "yes" : "no"}</dd>
-            <dt>Error</dt>
-            <dd>{error ? `${error.code}: ${error.message}` : "none"}</dd>
-          </dl>
-
-          <h2>Usage</h2>
-          <pre className="demo__code">{snippet}</pre>
-          {buildError ? <p className="demo__build-error">Sample deck failed to build: {buildError}</p> : null}
-          <p className="demo__hint">
-            Every sample is generated in the browser. The deck includes text, shapes, images, a group, a table,
-            charts, an empty slide and deliberately unsupported content; the Word document adds headings, lists, a
-            merged table, a picture and page breaks; the workbook adds dates, percentages, formulas, merges and a
-            second sheet; the PDF is rasterised page by page with pdf.js and the TIFF is decoded page by page. Images,
-            delimited text and text files open as pages too — drop one in and turn on debug mode to read the diagnostics, which
-            explain how a text file was classified and, for a table, which delimiter was detected. Presentation mode
-            hides every control and fills the screen — click or press Space to advance, Esc to come back. An
-            <code>.html</code> file is shown as its source text, like any other text file: nothing in it is ever
-            executed and it is never put in a frame.
-          </p>
-        </aside>
-
-        <main
-          className={`demo__stage${dragActive ? " demo__stage--drag" : ""}`}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={onDrop}
-        >
-          {source ? (
-            <DocumentViewer
-              ref={viewer}
-              file={source}
-              /* A published worker keeps PDF parsing off the main thread. */
-              pdfWorkerSrc={PDF_WORKER_SRC}
-              showThumbnails={showThumbnails}
-              allowThumbnailToggle
-              debug={debug}
-              dark={dark}
-              fit={fit}
-              presentation={presenting}
-              onPresentationChange={setPresenting}
-              onLoad={onLoad}
-              onError={onError}
-              onSlideChange={setSlide}
-            />
-          ) : (
-            <div className="demo__empty">
-              <p>Drop a .pptx, .docx, .xlsx, .pdf, image, .csv or text file here, or</p>
-              <button type="button" className="demo__button demo__button--primary" onClick={loadSample}>
-                load the sample deck
+      <main id="top">
+        <section className="hero">
+          <div className="hero__copy">
+            <a className="pill" href={`${GITHUB_URL}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer">
+              <span className="pill__dot" /> v{version} · MIT · open source
+            </a>
+            <h1>
+              Every document.
+              <br />
+              <span className="grad">One React component.</span>
+            </h1>
+            <p className="hero__lead">
+              Render PowerPoint, Word, Excel, PDF, images, CSV and text files right inside your React app. Parsed and
+              drawn in the browser — no server, no API key, no watermark.
+            </p>
+            <div className="hero__cta">
+              <a className="btn btn--primary" href="#playground">
+                Try it live
+                <Icon d="M5 12h14M13 6l6 6-6 6" />
+              </a>
+              <button type="button" className="install" onClick={() => copy(INSTALL)} aria-label={`Copy: ${INSTALL}`}>
+                <span className="install__prompt">$</span>
+                <code>{INSTALL}</code>
+                <span className="install__hint">{copied ? "Copied" : "Copy"}</span>
               </button>
             </div>
-          )}
-          {dragActive ? <div className="demo__drop">Drop to load</div> : null}
-        </main>
-      </div>
+            <ul className="chips" aria-label="Supported formats">
+              {["PPTX", "DOCX", "XLSX", "PDF", "TIFF", "PNG · JPG · SVG", "CSV", "TXT · JSON"].map((label) => (
+                <li key={label}>{label}</li>
+              ))}
+            </ul>
+          </div>
+          <HeroArt />
+        </section>
+
+        <Section
+          id="playground"
+          eyebrow="Playground"
+          title="Try it with a sample, or your own file."
+          lead="Every sample below is generated in this tab. Drop in any supported file — it is read locally and never uploaded."
+        >
+          <Playground siteDark={theme === "dark"} />
+        </Section>
+
+        <Section id="features" eyebrow="Why this viewer" title="Built for real apps, not just demos.">
+          <div className="features">
+            {FEATURES.map((feature) => (
+              <article key={feature.title} className="feature">
+                <span className="feature__icon">
+                  <Icon d={feature.icon} />
+                </span>
+                <h3>{feature.title}</h3>
+                <p>{feature.body}</p>
+              </article>
+            ))}
+          </div>
+        </Section>
+
+        <Section
+          id="formats"
+          eyebrow="Formats"
+          title="Format support at a glance."
+          lead={
+            <>
+              The format is decided from the file’s bytes, never its name. The full matrix lives in{" "}
+              <a href={`${GITHUB_URL}/blob/main/COMPATIBILITY.md`} target="_blank" rel="noreferrer">
+                COMPATIBILITY.md
+              </a>
+              .
+            </>
+          }
+        >
+          <div className="formats">
+            {FORMATS.map((format) => (
+              <article key={format.name} className={`format tone-${format.tone}`}>
+                <header className="format__head">
+                  <span className="format__badge" aria-hidden="true">
+                    {format.badge}
+                  </span>
+                  <div>
+                    <h3>{format.name}</h3>
+                    <p className="format__tagline">{format.tagline}</p>
+                  </div>
+                </header>
+                <ul className="format__exts" aria-label="File extensions">
+                  {format.exts.map((ext) => (
+                    <li key={ext}>{ext}</li>
+                  ))}
+                </ul>
+                <ul className="format__points">
+                  {format.points.map((point) => (
+                    <li key={point}>{point}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </Section>
+
+        <Section id="start" eyebrow="Quick start" title="Up and running in a minute.">
+          <div className="start">
+            <div className="start__steps">
+              <div className="step">
+                <span className="step__n">1</span>
+                <div>
+                  <h3>Install</h3>
+                  <p>One package with everything it needs. pdf.js is loaded only when a PDF is opened.</p>
+                  <Code code={INSTALL} title="terminal" />
+                </div>
+              </div>
+              <div className="step">
+                <span className="step__n">2</span>
+                <div>
+                  <h3>Render a file</h3>
+                  <p>
+                    Pass a <code>File</code>, <code>Blob</code>, <code>ArrayBuffer</code> or URL. The viewer fills its
+                    parent.
+                  </p>
+                  <Code code={USAGE} title="Preview.tsx" />
+                </div>
+              </div>
+            </div>
+            <div className="step step--side">
+              <span className="step__n">3</span>
+              <div>
+                <h3>Drive it from your app</h3>
+                <p>Controlled props, callbacks and an imperative handle for navigation, zoom and presenting.</p>
+                <Code code={CONTROLLED} title="controlled.tsx" />
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        <section className="cta">
+          <h2>Show documents, not download links.</h2>
+          <p>Free and open source under the MIT licence.</p>
+          <div className="hero__cta">
+            <a className="btn btn--primary" href={GITHUB_URL} target="_blank" rel="noreferrer">
+              Star on GitHub
+            </a>
+            <a className="btn btn--ghost" href={`${GITHUB_URL}#readme`} target="_blank" rel="noreferrer">
+              Read the docs
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer className="footer">
+        <span>
+          <span className="brand__mark brand__mark--sm" aria-hidden="true" /> react-anydoc-viewer · MIT licence
+        </span>
+        <span className="footer__links">
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+          <a href={NPM_URL} target="_blank" rel="noreferrer">
+            npm
+          </a>
+          <a href={`${GITHUB_URL}/blob/main/CHANGELOG.md`} target="_blank" rel="noreferrer">
+            Changelog
+          </a>
+          <a href={`${GITHUB_URL}/issues/new/choose`} target="_blank" rel="noreferrer">
+            Report an issue
+          </a>
+        </span>
+      </footer>
     </div>
   );
 }
