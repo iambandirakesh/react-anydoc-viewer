@@ -13,7 +13,7 @@
  */
 
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { selectionText } from "./worksheetUtils";
+import { selectionText } from "../utils/worksheet";
 import type { PageRenderer } from "../renderer/pageRenderer";
 import type { SheetCell, SheetPageData } from "../parser/xlsx/model";
 import type { MediaStore } from "../parser/media";
@@ -204,6 +204,5 @@ export function createSheetPageRenderer(pages: readonly SheetPageData[]): PageRe
     if (!data) return null;
     return <SheetPage key={page.index} savedScroll={interactive ? positions[page.index] : undefined} data={data} width={width} height={height} interactive={interactive} media={media} warn={warn} />;
   };
-  renderer.worksheetPages = pages;
   return renderer;
 }

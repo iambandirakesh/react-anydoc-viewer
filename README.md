@@ -109,7 +109,7 @@ export function App() {
       showControls
       showThumbnails
       fit="width"
-      onLoad={(info) => console.log(info.slideCount, "slides")}
+      onLoad={(info) => console.log(info.pageCount, "pages")}
       onError={(error) => console.error(error.code, error.message)}
       onSlideChange={(index) => console.log("slide", index)}
     />
@@ -360,10 +360,12 @@ presenting:
 Press `f` inside a slideshow to use the browser's fullscreen as well (which also
 hides the address bar); `enterPresentation()` and `enterFullscreen()` compose.
 
-For XLSX and CSV, presentation mode expands the worksheet view but keeps its tabs
-and grid tools. Clicks and page-navigation keys do not advance sheets; `Esc` exits.
-The floating **Present** button is not shown for these formats, so use the handle
-or the controlled `presentation` prop to enter this mode.
+For XLSX and CSV, the worksheet tools get a **Present** button instead (hidden by
+the same `showPresentationControl={false}`). A presented worksheet fills the viewport
+with only the grid and its sheet tabs: the search, copy, CSV and zoom controls are
+removed. The grid keeps the arrow keys and clicks for cell selection, so sheets are
+switched with the tabs rather than `Space` or the arrows; `Esc` exits. The hint uses
+the `sheetPresentationHint` label, and the button text is `presentSheet`.
 
 ## Imperative navigation
 
@@ -509,7 +511,7 @@ component.
 | `allowThumbnailToggle` | `boolean` | `showThumbnails` | Show the sidebar toggle button |
 | `presentation` | `boolean` | — | Controlled presentation (slideshow) mode |
 | `defaultPresentation` | `boolean` | `false` | Start in presentation mode |
-| `showPresentationControl` | `boolean` | `true` | Show the Present button in the toolbar |
+| `showPresentationControl` | `boolean` | `true` | Show the Present button in the toolbar (and in the worksheet tools for XLSX and CSV) |
 | `fit` | `"width" \| "height" \| "page" \| "actual" \| "none"` | `"page"` | Initial page scaling mode; worksheets start at 100% unless zoom is supplied, with a separate Fit width action |
 | `zoom` | `number` | — | Controlled scale (`1` is 100%) |
 | `defaultZoom` | `number` | — | Uncontrolled initial scale |
@@ -578,7 +580,7 @@ A `.docx` is not a page of shapes, so the viewer parses WordprocessingML itself
 parts) exactly as it parses PresentationML, then **paginates the document in the
 browser** and hands each page to the same renderer a slide uses. Navigation,
 thumbnails, zoom, fit modes and presentation mode therefore work unchanged, and
-`slideCount` is the page count.
+`pageCount` (formerly `slideCount`) is the page count.
 
 | Supported | Notes |
 | --- | --- |
@@ -797,7 +799,7 @@ These are fixture-specific results, not fresh measurements of the current releas
 | `.pdf` | 600 pages, 1.4 MB | **0.42 s** |
 
 These timings do not predict arbitrary files, image decode completion or PDF raster
-completion. See [PERFORMANCE_REVIEW.md](PERFORMANCE_REVIEW.md) for the dated
+completion. See [docs/PERFORMANCE_REVIEW.md](docs/PERFORMANCE_REVIEW.md) for the dated
 production benchmark, definitions and outstanding optimizations. The review does
 not benchmark the XLSX/CSV worksheet view added in 0.2.3.
 

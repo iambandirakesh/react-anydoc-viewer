@@ -700,6 +700,23 @@ test.describe("Workbooks and TIFF images", () => {
     expect(errors).toEqual([]);
   });
 
+  test("presents a worksheet from the worksheet tools", async ({ page }) => {
+    await loadSample(page, "Load sample .xlsx");
+    const root = page.locator(".radv-root");
+    await page.getByRole("button", { name: "Present", exact: true }).click();
+    await expect(root).toHaveAttribute("data-presenting", "true");
+    await expect(page.getByRole("toolbar", { name: "Worksheet tools" })).toHaveCount(0);
+    await expect(page.getByTestId("rv-present-hint")).toContainText("Switch sheets with the tabs");
+
+    await page.getByRole("tab", { name: "Notes" }).click();
+    await expect(page.getByTestId("rv-present-hint")).toContainText("2 / 2");
+    await expect(page.locator(".radv-workbook-viewport [data-testid='rv-sheet-page']")).toContainText("Read-only grid");
+
+    await page.keyboard.press("Escape");
+    await expect(root).toHaveAttribute("data-presenting", "false");
+    await expect(page.getByRole("toolbar", { name: "Worksheet tools" })).toBeVisible();
+  });
+
   test("decodes every page of a TIFF onto a canvas", async ({ page }) => {
     const errors: string[] = [];
     page.on("console", (message) => {

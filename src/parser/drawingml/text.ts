@@ -21,12 +21,12 @@ import type {
   Run,
   RunProps,
   TextBody,
-} from "../model/types";
-import { attr, attrBool, attrNum, child, children, relAttr, type XmlNode } from "./xml";
-import { angleUnitsToDegrees, clamp, emuToPx, hundredthsPtToPx, ptToPx } from "./units";
+} from "../../model/types";
+import { attr, attrBool, attrNum, child, children, relAttr, type XmlNode } from "../xml";
+import { angleUnitsToDegrees, clamp, emuToPx, hundredthsPtToPx, ptToPx } from "../units";
 import { isColorElement, resolveColorElement } from "./color";
 import type { DrawingContext } from "./drawing";
-import { sanitizeUrl } from "../utils/sanitize";
+import { sanitizeUrl } from "../../utils/sanitize";
 
 export interface TextContext extends DrawingContext {
   /** level styles inherited from the master / layout for this placeholder */
@@ -394,4 +394,4 @@ export function textBodyPlainText(body: TextBody | null): string {
 }
 
 export { angleUnitsToDegrees };
-export type { TextBody } from "../model/types";
+export type { TextBody } from "../../model/types";

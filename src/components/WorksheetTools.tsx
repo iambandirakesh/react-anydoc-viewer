@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import type { SheetPageData } from "../parser/xlsx/model";
-import { findSheetMatches, sheetCsv, selectionText, type SheetMatch } from "./worksheetUtils";
+import { findSheetMatches, sheetCsv, selectionText, type SheetMatch } from "../utils/worksheet";
 import { columnLabel } from "./SheetPage";
 
-export function WorksheetTools({ pages, index, navigate, fitWidth, root }: { pages: readonly SheetPageData[]; index: number; navigate: (index: number) => void; fitWidth: () => void; root: RefObject<HTMLDivElement | null> }) {
+export interface WorksheetPresentControl {
+  label: string;
+  available: boolean;
+  enter: () => void;
+}
+
+export function WorksheetTools({ pages, index, navigate, fitWidth, root, present }: { pages: readonly SheetPageData[]; index: number; navigate: (index: number) => void; fitWidth: () => void; root: RefObject<HTMLDivElement | null>; present?: WorksheetPresentControl }) {
   const [query, setQuery] = useState("");
   const [resultIndex, setResultIndex] = useState(0);
   const [pending, setPending] = useState<SheetMatch | null>(null);
@@ -46,6 +52,7 @@ export function WorksheetTools({ pages, index, navigate, fitWidth, root }: { pag
       const link = document.createElement("a"); link.href = url; link.download = `${current.name.replace(/[\\/:*?"<>|]/g, "_")}.csv`; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }}>Download CSV</button>
+    {present && <button type="button" className="radv-worksheet-present" disabled={!present.available} onClick={present.enter}>{present.label}</button>}
     <span role="status">{message?.text}</span>
   </div>;
 }

@@ -23,9 +23,9 @@ import type {
   TableNode,
   Transform,
   UnsupportedNode,
-} from "../model/types";
-import { attr, attrBool, attrNum, child, relAttr, type XmlNode } from "./xml";
-import { isBrowserRenderable, type ImageKind } from "./archive";
+} from "../../model/types";
+import { attr, attrBool, attrNum, child, relAttr, type XmlNode } from "../xml";
+import { isBrowserRenderable, type ImageKind } from "../archive";
 import { resolveColorElement } from "./color";
 import {
   parseFillFromProps,
@@ -38,7 +38,7 @@ import {
 } from "./drawing";
 import { parseTextBody, type TextBody, type TextContext } from "./text";
 import { parseTable } from "./table";
-import { sanitizeUrl } from "../utils/sanitize";
+import { sanitizeUrl } from "../../utils/sanitize";
 
 export interface PartResolver {
   /** drawing context bound to the part that owns the shapes */

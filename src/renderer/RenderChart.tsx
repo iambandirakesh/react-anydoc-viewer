@@ -11,7 +11,7 @@
 import type { ReactNode } from "react";
 import type { ChartData, ChartNode, ChartSeries } from "../model/types";
 import { emuToPx } from "../parser/units";
-import { rgbaToCss } from "../parser/color";
+import { rgbaToCss } from "../parser/drawingml/color";
 
 export const DEFAULT_CHART_PALETTE = [
   "#4472C4",

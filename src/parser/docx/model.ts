@@ -5,7 +5,7 @@
  * positioned shapes. The bridge is this list of blocks: the parser produces
  * blocks in document order and the layout step decides which page each block
  * lands on and at what offset, before turning them into the same
- * {@link SlideModel} shapes the presentation renderer already understands.
+ * {@link PageModel} shapes the presentation renderer already understands.
  */
 
 import type { TableData, TextBody } from "../../model/types";
@@ -77,6 +77,13 @@ export type DocxBlock = DocxParagraphBlock | DocxTableBlock | DocxImageBlock | D
 export interface ParagraphMeasurer {
   (block: DocxParagraphBlock, widthPx: number): number;
   measureMany?(blocks: DocxParagraphBlock[], widthPx: number): number[];
+}
+
+/** A measurer plus its lifetime; `kind` lets the parser report estimated layout. */
+export interface MeasurerHandle {
+  measure: ParagraphMeasurer;
+  dispose(): void;
+  kind: "layout" | "estimate";
 }
 
 /** Default font size for a paragraph block, used when a run carries none. */

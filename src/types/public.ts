@@ -8,7 +8,7 @@
 import type { CSSProperties, ReactNode, Ref } from "react";
 import type { Diagnostic } from "../model/types";
 import type { ArchiveLimits } from "../parser/archive";
-import type { ViewerSource } from "../parser/loadPresentation";
+import type { ViewerSource } from "../parser/source";
 import type { DocumentFormat, DocumentViewerError } from "../errors";
 
 /** Accepted document inputs: File, Blob, ArrayBuffer, Uint8Array, URL or URL string. */
@@ -48,6 +48,10 @@ export interface ViewerLabels {
   exitPresentation: string;
   /** shown briefly when presentation mode starts */
   presentationHint: string;
+  /** the Present button in the worksheet tools (XLSX and CSV) */
+  presentSheet: string;
+  /** shown briefly when a worksheet is presented */
+  sheetPresentationHint: string;
   toggleThumbnails: string;
   thumbnails: string;
   slideOf: (current: number, total: number) => string;
@@ -67,7 +71,9 @@ export interface ViewerLabels {
 export interface DocumentInfo {
   /** the format that was detected from the bytes */
   format: DocumentFormat;
-  /** number of pages: slides for .pptx, pages for .docx/.xlsx/.pdf/images/text */
+  /** number of pages: slides for .pptx, pages for .docx/.pdf/images/text, sheets for .xlsx */
+  pageCount: number;
+  /** @deprecated Use {@link DocumentInfo.pageCount}; always the same value. */
   slideCount: number;
   /** slide width in EMU (914400 EMU = 1 inch) */
   widthEmu: number;

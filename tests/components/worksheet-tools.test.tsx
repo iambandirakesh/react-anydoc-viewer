@@ -4,7 +4,7 @@ import { buildXlsx } from "../fixtures/xlsx";
 import { DocumentViewer } from "../../src/components/DocumentViewer";
 import { parseXlsxArchive } from "../../src/parser/xlsx";
 import { readArchive } from "../../src/parser/archive";
-import { findSheetMatches, selectionText, sheetCsv } from "../../src/components/worksheetUtils";
+import { findSheetMatches, selectionText, sheetCsv } from "../../src/utils/worksheet";
 
 afterEach(cleanup);
 const workbook = () => buildXlsx({ sheets: [{ name: "Dashboard", rows: [["Heading", "Revenue"], ["Cosmetics", 10], ["=UNSAFE()", 20]] }, { name: "Categories", rows: [["Category", "Revenue"], ["Cosmetics", 30]] }] });
@@ -58,4 +58,27 @@ it("keeps worksheet panel IDs unique across viewer instances", async () => {
     const tabs = panel.closest(".radv-workbook")!.querySelectorAll('[role="tab"]');
     for (const tab of tabs) expect(tab.getAttribute("aria-controls")).toBe(panel.id);
   }
+});
+
+it("presents a worksheet with only the grid and its tabs", async () => {
+  const { container } = render(<DocumentViewer source={workbook()} />);
+  await waitFor(() => expect(screen.queryAllByRole("tab")).toHaveLength(2));
+  const root = container.querySelector(".radv-root")!;
+  fireEvent.click(screen.getByRole("button", { name: "Present" }));
+  expect(root.getAttribute("data-presenting")).toBe("true");
+  // The tools and zoom go; the tabs stay, since the grid owns the arrow keys.
+  expect(screen.queryByRole("toolbar", { name: "Worksheet tools" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Zoom in" })).toBeNull();
+  expect(screen.getByTestId("rv-present-hint").textContent).toContain("Switch sheets with the tabs");
+  fireEvent.click(screen.getByRole("tab", { name: "Categories" }));
+  expect(screen.getByTestId("rv-present-hint").textContent).toContain("2 / 2");
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(root.getAttribute("data-presenting")).toBe("false");
+  expect(screen.getByRole("toolbar", { name: "Worksheet tools" })).toBeTruthy();
+});
+
+it("leaves the worksheet Present button out when the host hides it", async () => {
+  render(<DocumentViewer source={workbook()} showPresentationControl={false} />);
+  await screen.findByRole("toolbar", { name: "Worksheet tools" });
+  expect(screen.queryByRole("button", { name: "Present" })).toBeNull();
 });

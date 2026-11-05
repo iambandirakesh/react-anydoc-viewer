@@ -9,22 +9,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PageRenderer } from "../renderer/pageRenderer";
-
-/** Structurally typed so this module never imports pdf.js at runtime. */
-export interface PdfPageLike {
-  getViewport(params: { scale: number }): { width: number; height: number };
-  render(params: {
-    canvasContext: CanvasRenderingContext2D;
-    viewport: unknown;
-    canvas: HTMLCanvasElement;
-  }): { promise: Promise<void>; cancel(): void };
-  cleanup?(): void;
-}
-
-export interface PdfDocumentLike {
-  numPages: number;
-  getPage(pageNumber: number): Promise<PdfPageLike>;
-}
+import type { PdfDocumentLike } from "../parser/pageContent";
 
 /** Ceiling on the raster density: 3x a CSS pixel is indistinguishable at 100%. */
 const MAX_DENSITY = 3;

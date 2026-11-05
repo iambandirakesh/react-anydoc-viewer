@@ -10,7 +10,7 @@ import {
 } from "../../src/parser/archive";
 import { XmlError, parseXml } from "../../src/parser/xml";
 import { sanitizeUrl } from "../../src/utils/sanitize";
-import { parsePresentationBytes } from "../../src/parser/presentation";
+import { parsePresentationBytes } from "../../src/parser/pptx";
 import { buildPptx, NS, paragraph, run, sp, TINY_PNG } from "../fixtures/pptx";
 
 const encoder = new TextEncoder();

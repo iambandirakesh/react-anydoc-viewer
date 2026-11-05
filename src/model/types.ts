@@ -385,7 +385,7 @@ export interface TextStyles {
   other: (LvlStyle | null)[];
 }
 
-export interface SlideModel {
+export interface PageModel {
   /** 0-based presentation order */
   index: number;
   partName: string;
@@ -403,10 +403,10 @@ export interface PackageParts {
   names: string[];
 }
 
-export interface PresentationModel {
+export interface DocumentModel {
   width: Emu;
   height: Emu;
-  slides: SlideModel[];
+  slides: PageModel[];
   theme: ThemeData;
   colorMap: ColorMap;
   textStyles: TextStyles;

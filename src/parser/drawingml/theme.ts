@@ -1,7 +1,7 @@
 /** Parsing of `ppt/theme/themeN.xml` and the master colour map (`p:clrMap`). */
 
-import type { ColorMap, Fill, LineStyle, RGBA, Shadow, ThemeData } from "../model/types";
-import { attr, child, children, type XmlNode } from "./xml";
+import type { ColorMap, Fill, LineStyle, RGBA, Shadow, ThemeData } from "../../model/types";
+import { attr, child, children, type XmlNode } from "../xml";
 import { parseFill, parseLine, parseShadow } from "./drawing";
 
 export const DEFAULT_THEME_COLORS: Record<string, RGBA> = {

@@ -1,10 +1,10 @@
 import type { ShapeNodeUnion, ThemeData, Transform } from "../../model/types";
 import { readBinary, readText, sniffImageKind, type Archive } from "../archive";
-import { chartHasData, parseChart } from "../chart";
-import { accentPalette } from "../drawing";
+import { chartHasData, parseChart } from "../drawingml/chart";
+import { accentPalette } from "../drawingml/drawing";
 import { relationshipsFor } from "../relationships";
-import { parseShapeTree, type PartResolver } from "../shapes";
-import { DEFAULT_COLOR_MAP } from "../theme";
+import { parseShapeTree, type PartResolver } from "../drawingml/shapes";
+import { DEFAULT_COLOR_MAP } from "../drawingml/theme";
 import { attrNum, child, find, parseXml, relAttr, type XmlNode } from "../xml";
 import type { SheetPageData } from "./model";
 

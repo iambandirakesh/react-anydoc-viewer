@@ -9,8 +9,8 @@ This is a historical measurement report from the PPTX/PDF review included in
 0.2.1, not a fresh benchmark of 0.2.3. The worksheet tabs, XLSX styling/drawings,
 CSV grid and tools added in 0.2.3 were not measured here. The recommendations
 below remain unimplemented; added benchmarks are not runtime optimizations.
-For current features and limits, see [README.md](README.md) and
-[COMPATIBILITY.md](COMPATIBILITY.md). Re-run the commands below before using these
+For current features and limits, see [README.md](../README.md) and
+[COMPATIBILITY.md](../COMPATIBILITY.md). Re-run the commands below before using these
 numbers for a new release, device or workload.
 
 ## Results
@@ -85,7 +85,7 @@ inspection finding; the isolated saving has not yet been measured.
 ### 4. Keep large PPTX parsing responsive
 
 `src/parser/archive.ts` inflates ZIP data synchronously and
-`src/parser/presentation.ts` parses all slides before displaying the first.
+`src/parser/pptx/index.ts` parses all slides before displaying the first.
 `src/parser/document.ts` invokes this work on the browser main thread.
 
 The 104 MiB stress deck took 190 ms to reach ready on this machine. That total is

@@ -27,7 +27,7 @@ import type {
   UnsupportedNode,
 } from "../model/types";
 import { emuToPx } from "../parser/units";
-import { customGeometryToPath, presetToPath, type GeometryPath } from "../parser/geometry";
+import { customGeometryToPath, presetToPath, type GeometryPath } from "../parser/drawingml/geometry";
 import type { MediaStore } from "../parser/media";
 import { cssShadowFilter, gradientIdFor, hashString, paintForFill, svgPaint } from "./style";
 import { renderTextBody } from "./RenderText";

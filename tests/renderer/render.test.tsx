@@ -18,7 +18,7 @@ import {
   tableFrame,
   tableXml,
 } from "../fixtures/pptx";
-import { parsePresentationBytes } from "../../src/parser/presentation";
+import { parsePresentationBytes } from "../../src/parser/pptx";
 import { SlideView } from "../../src/renderer/SlideView";
 
 afterEach(cleanup);

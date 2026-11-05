@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { OLE_LABELS, hasOleHeader, sniffOleKind } from "../../src/parser/ole";
 import { readArchive } from "../../src/parser/archive";
 import { detectFormat } from "../../src/parser/document";
-import { normalizeError } from "../../src/parser/loadPresentation";
+import { normalizeError } from "../../src/parser/source";
 
 const OLE_HEADER = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 

@@ -320,7 +320,7 @@ export function App() {
             <dt>Format</dt>
             <dd>{info ? (FORMAT_LABELS[info.format] ?? info.format) : "—"}</dd>
             <dt>Slides / pages</dt>
-            <dd>{info ? info.slideCount : "—"}</dd>
+            <dd>{info ? info.pageCount : "—"}</dd>
             <dt>Size</dt>
             <dd>{info ? `${(info.widthEmu / 914400).toFixed(2)}in × ${(info.heightEmu / 914400).toFixed(2)}in` : "—"}</dd>
             <dt>Aspect</dt>

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { PresentationModel } from "../model/types";
+import type { DocumentModel } from "../model/types";
 import type { MediaStore } from "../parser/media";
 import { SlideView } from "../renderer/SlideView";
 import type { PageRenderer } from "../renderer/pageRenderer";
 import type { ViewerLabels } from "../types/public";
 
 export interface ThumbnailSidebarProps {
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
   slideWidth: number;
   slideHeight: number;

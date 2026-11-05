@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { buildPptx, sp, group, inch, paragraph, run, chartXml, chartFrame, NS, RED_PNG, tableXml, tableCell, tableFrame } from "../fixtures/pptx";
-import { parsePresentationBytes } from "../../src/parser/presentation";
+import { parsePresentationBytes } from "../../src/parser/pptx";
 import { SlideView } from "../../src/renderer/SlideView";
 
 afterEach(cleanup);

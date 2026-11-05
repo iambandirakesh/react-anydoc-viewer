@@ -7,9 +7,9 @@
  * as `tx1` names a semantic slot, not a palette entry.
  */
 
-import type { ColorMap, RGBA, ThemeData } from "../model/types";
-import { attr, children, type XmlNode } from "./xml";
-import { clamp } from "./units";
+import type { ColorMap, RGBA, ThemeData } from "../../model/types";
+import { attr, children, type XmlNode } from "../xml";
+import { clamp } from "../units";
 
 export const BLACK: RGBA = { r: 0, g: 0, b: 0, a: 1 };
 export const WHITE: RGBA = { r: 255, g: 255, b: 255, a: 1 };

@@ -19,8 +19,8 @@ current code; sections 1–10 retain historical proposals and tradeoffs, **not a
 statement of what is implemented today**. In particular, the old proposals for
 virtualization, worksheet thumbnails, HTML previews and Markdown rendering must
 not be read as shipped features. For current behavior and limits use
-[README.md](README.md), [COMPATIBILITY.md](COMPATIBILITY.md) and
-[ARCHITECTURE.md](ARCHITECTURE.md).
+[README.md](../README.md), [COMPATIBILITY.md](../COMPATIBILITY.md) and
+[ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ### Status
 
@@ -109,32 +109,32 @@ inspection, font embedding, and printing fidelity. The library's contract is
 
 These four seams are why the answer is "mostly additive":
 
-1. **Detection from bytes, never the name.** [`format.ts`](src/parser/format.ts)
+1. **Detection from bytes, never the name.** [`format.ts`](../src/parser/format.ts)
    (`sniffContainer`, `probePackage`) plus
-   [`document.ts`](src/parser/document.ts) (`detectFormat`,
+   [`document.ts`](../src/parser/document.ts) (`detectFormat`,
    `parseDocumentBytes`) decide the format from magic bytes and OPC part names.
    A new format is a new branch, not a new code path through the components.
 2. **"A page is a slide."** Every parsed document becomes a
-   `PresentationModel` of `SlideModel`s ([`model/types.ts`](src/model/types.ts)).
+   `PresentationModel` of `SlideModel`s ([`model/types.ts`](../src/model/types.ts)).
    Navigation, thumbnails, zoom, fit modes, keyboard handling, presentation mode,
    the error boundary and diagnostics are all format-agnostic and come free.
    The `.docx` parser already proves this for a non-slide format: a page of a Word
    document is a slide whose shapes are paragraphs, tables and pictures.
-3. **The per-page renderer seam.** [`pageRenderer.ts`](src/renderer/pageRenderer.ts)
+3. **The per-page renderer seam.** [`pageRenderer.ts`](../src/renderer/pageRenderer.ts)
    lets a format draw its own page when the content is not a shape list
    (PDF does exactly this, lazily importing `pdfjs-dist`). Spreadsheets, HTML and
    images plug in here.
-4. **The media store + archive limits.** [`media.ts`](src/parser/media.ts)
+4. **The media store + archive limits.** [`media.ts`](../src/parser/media.ts)
    already turns part bytes into `<img>`-safe object URLs (and deliberately
    *not* into markup, so untrusted SVG cannot script the host page), and
-   [`archive.ts`](src/parser/archive.ts) already enforces entry count, per-entry
+   [`archive.ts`](../src/parser/archive.ts) already enforces entry count, per-entry
    bytes, total bytes and a compression-ratio guard.
 
 Consequences worth making explicit, because they set the shape of the work:
 
 - **The library is one document at a time.** "10 files per upload" is a host-app
   concern; the viewer takes one `source`. Switching files disposes the previous
-  media store correctly ([`usePresentation.ts`](src/hooks/usePresentation.ts)),
+  media store correctly ([`useDocument.ts`](../src/hooks/useDocument.ts)),
   so a host queue is a small wrapper, not a library feature.
 - **20 MB per file maps onto existing knobs**, not new ones:
   `maxDownloadBytes` (default 128 MiB) and `limits.maxCompressedBytes` /
@@ -150,18 +150,18 @@ Consequences worth making explicit, because they set the shape of the work:
 
 **Mechanism.** A new `image` container kind whose single page is one picture.
 
-- Detection: reuse [`archive.ts#sniffImageKind()`](src/parser/archive.ts) — it
+- Detection: reuse [`archive.ts#sniffImageKind()`](../src/parser/archive.ts) — it
   already recognises png/jpeg/gif/bmp/webp/tiff/emf/wmf and text-SVG. Add one
   branch for AVIF (`ftyp` + `avif`/`avis` brand) and, if wanted, ICO.
 - Page geometry: an image has no declared page size, so the page box is the
   image's natural pixel size converted to EMU (1 px = 9525 EMU, matching
-  `EMU_PER_PX` in [`units.ts`](src/parser/units.ts)) — i.e. `fit="page"` fits it
+  `EMU_PER_PX` in [`units.ts`](../src/parser/units.ts)) — i.e. `fit="page"` fits it
   exactly and `fit="actual"` is pixel-accurate.
 - Dimensions: read the header (PNG `IHDR`, JPEG SOF, GIF logical screen, WebP
   `VP8X`/`VP8`/`VP8L`, BMP info header) rather than waiting for a decode. This
   keeps parsing synchronous like the rest of the library and avoids a second
   async path; `decode` failure is still caught by the existing `ErrorBoundary`
-  in [`SlideCanvas.tsx`](src/components/SlideCanvas.tsx).
+  in [`SlideCanvas.tsx`](../src/components/SlideCanvas.tsx).
 - SVG stays an `<img src=objectURL>` — same rule the media store already
   documents. Never an iframe, never `dangerouslySetInnerHTML`.
 - Big or malformed images: `limits.maxEntryBytes` already caps them; a
@@ -199,12 +199,12 @@ Parts a read-only renderer needs:
 
 Two required changes to existing code:
 
-- [`archive.ts`](src/parser/archive.ts) `USEFUL_PART` currently matches
+- [`archive.ts`](../src/parser/archive.ts) `USEFUL_PART` currently matches
   `[content_types].xml`, `*.rels`, `ppt/**`, `word/**` and `docProps/core.xml`
   — **nothing under `xl/` is ever inflated today**, so `xl/**` (minus
   `xl/vbaProject.bin`, embeddings, printer settings) has to be added. The
   existing per-entry and total limits already make that safe.
-- [`format.ts`](src/parser/format.ts) `probePackage` already *recognises*
+- [`format.ts`](../src/parser/format.ts) `probePackage` already *recognises*
   `xl/workbook.xml` / `xl/workbook.bin` — it returns `format: null` with the
   label "an Excel workbook (.xlsx)". That becomes `format: "xlsx"`.
   `xl/workbook.bin` is `.xlsb` (binary sheets, unreadable as XML) and should
@@ -255,7 +255,7 @@ A sheet of 40 000 rows cannot become shapes. Two parts make this tractable:
 - **The page body is a virtualised grid.** Render only the rows/columns inside
   the visible rectangle, driven by scroll position and `scale`. This needs a
   small extension to the existing seam in
-  [`pageRenderer.ts`](src/renderer/pageRenderer.ts):
+  [`pageRenderer.ts`](../src/renderer/pageRenderer.ts):
   - `PageRenderContext` currently carries `page`, `width`, `height`, `scale`,
     `interactive`, `media`, `warn`. Add the scroll viewport (offset + size) and a
     `mode: "page" | "thumbnail"` flag. Thumbnails are distinguished *today* only
@@ -264,11 +264,11 @@ A sheet of 40 000 rows cannot become shapes. Two parts make this tractable:
     a thousand-row sheet into a 148 px preview is pure waste, so a thumbnail should
     draw a bounded preview of the first N rows/columns instead. `mode` makes that
     distinction explicit rather than inferring it from a flag about links.
-  - [`SlideCanvas.tsx`](src/components/SlideCanvas.tsx) already handles a page
+  - [`SlideCanvas.tsx`](../src/components/SlideCanvas.tsx) already handles a page
     larger than the container (`radv-canvas-scroll`), so a wide sheet at
     `scale = 1` scrolls in both axes with no new CSS. It only needs to report the
     scroll offset and to pass `mode="page"`.
-  - [`ThumbnailSidebar.tsx`](src/components/ThumbnailSidebar.tsx) passes
+  - [`ThumbnailSidebar.tsx`](../src/components/ThumbnailSidebar.tsx) passes
     `mode="thumbnail"`.
 - **Default fit has to differ per format.** `fit="page"` on a 60-column sheet
   would render unreadable microtext. Options: (a) the format declares a
@@ -284,7 +284,7 @@ A sheet of 40 000 rows cannot become shapes. Two parts make this tractable:
 fixtures + docs). The parser alone is ~M; the surface is the rest.
 
 **Test strategy.** Build fixtures in-process, as the repo already does for
-`.pptx` and `.docx` ([`tests/fixtures/pptx.ts`](tests/fixtures/pptx.ts)): a ZIP
+`.pptx` and `.docx` ([`tests/fixtures/pptx.ts`](../tests/fixtures/pptx.ts)): a ZIP
 assembled with `fflate` at test time, covering shared strings, inline strings,
 dates (1900 and 1904), merged cells, sparse coordinates, custom column widths and
 a formula with a cached value. No binary fixture files, no network.
@@ -297,8 +297,8 @@ a formula with a cached value. No binary fixture files, no network.
 
 Mechanism: decode, split into lines, measure in a monospace font, and paginate
 with the same greedy algorithm `.docx` already uses
-([`docx/layout.ts`](src/parser/docx/layout.ts)); the page size is US Letter or A4
-(the `.docx` default in [`docx/index.ts`](src/parser/docx/index.ts) is already
+([`docx/layout.ts`](../src/parser/docx/layout.ts)); the page size is US Letter or A4
+(the `.docx` default in [`docx/index.ts`](../src/parser/docx/index.ts) is already
 US Letter, `12240 × 15840` twips). Each page's content is a handful of
 `ShapeNode`s carrying a `TextBody`, so nothing in the renderer changes.
 
@@ -376,7 +376,7 @@ model the `.docx` parser already produces** (paragraph, heading, list, table,
 code block, image) and let the existing paginator and text renderer draw it.
 No HTML string, no `dangerouslySetInnerHTML`, no sanitizer, and headings/lists/
 tables/code get the Word pipeline's behaviour for free — including
-`sanitizeUrl()` ([`utils/sanitize.ts`](src/utils/sanitize.ts)) for links, which
+`sanitizeUrl()` ([`utils/sanitize.ts`](../src/utils/sanitize.ts)) for links, which
 already exists and already reports blocked schemes.
 
 A hand-written subset (headings, paragraphs, emphasis/strong/inline code, fenced
@@ -416,7 +416,7 @@ ambiguous cases the host's call.
 
 ### 6.2 Public API and error model
 
-- [`errors.ts`](src/errors.ts): widen `DocumentFormat` (e.g. add `"png"`… no —
+- [`errors.ts`](../src/errors.ts): widen `DocumentFormat` (e.g. add `"png"`… no —
   prefer `"image" | "xlsx" | "csv" | "text" | "markdown" | "html"`) and
   `SUPPORTED_FORMATS`. **This is a breaking change for consumers with exhaustive
   `switch` statements**, so the release that ships it is `0.2.0`, not `0.1.2`.
@@ -437,20 +437,20 @@ ambiguous cases the host's call.
 - New renderers: `GridPage` (windowed, reused by `.xlsx` and `.csv`), and reuse of
   the existing text renderer for everything else. (`HtmlPage`, the sandboxed-frame
   renderer, was built and then removed — see the status table above.)
-- [`SlideCanvas.tsx`](src/components/SlideCanvas.tsx) and
-  [`ThumbnailSidebar.tsx`](src/components/ThumbnailSidebar.tsx): pass the new
+- [`SlideCanvas.tsx`](../src/components/SlideCanvas.tsx) and
+  [`ThumbnailSidebar.tsx`](../src/components/ThumbnailSidebar.tsx): pass the new
   context fields; no other behavioural change.
-- [`DocumentViewer.tsx`](src/components/DocumentViewer.tsx): apply the suggested
+- [`DocumentViewer.tsx`](../src/components/DocumentViewer.tsx): apply the suggested
   fit, and expose `contentHint`.
 
 ### 6.4 Lazy loading, bundle budget
 
 `pdfjs-dist` is imported only when a PDF is opened, and the comments in
-[`pdf.ts`](src/parser/pdf.ts) explain why. New parsers must follow the same
+[`pdf.ts`](../src/parser/pdf.ts) explain why. New parsers must follow the same
 pattern (`await import(...)` inside the dispatch for that format) so `.pptx`,
 `.docx` and `.pdf` users never pay for the new code. The package gate already
 inspects the built output
-([`scripts/verify-package.mjs`](scripts/verify-package.mjs)); it should grow an
+([`scripts/verify-package.mjs`](../scripts/verify-package.mjs)); it should grow an
 assertion that the new features are separate chunks and that the base bundle has
 not regressed.
 
@@ -459,33 +459,33 @@ not regressed.
 | Area | Work |
 | --- | --- |
 | Unit tests | New suites for spreadsheet (cells/styles/dates/merges), CSV state machine + delimiter sniffing, text pagination + encodings, Markdown → blocks, image headers |
-| Fixtures | Build `.xlsx`/`.csv`/`.md`/text fixtures in-process with `fflate`, mirroring the two existing builders [`tests/fixtures/pptx.ts`](tests/fixtures/pptx.ts) and [`tests/fixtures/docx.ts`](tests/fixtures/docx.ts) |
-| Security tests | Extend [`tests/security/security.test.ts`](tests/security/security.test.ts) (it already builds hostile packages with `fflate` and asserts parts like `docProps/thumbnail.jpeg` are never inflated) with the new surfaces: oversized/hostile spreadsheets, decompression ratio, HTML that must not execute, SVG that must not script |
-| Browser tests | Extend [`tests/e2e/viewer.spec.ts`](tests/e2e/viewer.spec.ts): a workbook opens, tabs navigate, the grid scrolls, markdown renders, an HTML file does not execute script (assert no alert/global side effect), an image fits |
-| Package gate | Extend `verify-package.mjs` and [`scripts/prepublish-guard.mjs`](scripts/prepublish-guard.mjs) with the new exported types and chunks |
-| Demo | Sample workbook/text/markdown files in [`examples/demo/src`](examples/demo/src) and the picker's `accept` list |
+| Fixtures | Build `.xlsx`/`.csv`/`.md`/text fixtures in-process with `fflate`, mirroring the two existing builders [`tests/fixtures/pptx.ts`](../tests/fixtures/pptx.ts) and [`tests/fixtures/docx.ts`](../tests/fixtures/docx.ts) |
+| Security tests | Extend [`tests/security/security.test.ts`](../tests/security/security.test.ts) (it already builds hostile packages with `fflate` and asserts parts like `docProps/thumbnail.jpeg` are never inflated) with the new surfaces: oversized/hostile spreadsheets, decompression ratio, HTML that must not execute, SVG that must not script |
+| Browser tests | Extend [`tests/e2e/viewer.spec.ts`](../tests/e2e/viewer.spec.ts): a workbook opens, tabs navigate, the grid scrolls, markdown renders, an HTML file does not execute script (assert no alert/global side effect), an image fits |
+| Package gate | Extend `verify-package.mjs` and [`scripts/prepublish-guard.mjs`](../scripts/prepublish-guard.mjs) with the new exported types and chunks |
+| Demo | Sample workbook/text/markdown files in [`examples/demo/src`](../examples/demo/src) and the picker's `accept` list |
 | Docs | `README.md` format table and the `accept` snippet, a new `COMPATIBILITY.md` section per format, `ARCHITECTURE.md` seams, `SECURITY.md` (untrusted markup policy, HTML origin advice, CSV export note), `CHANGELOG.md` |
 
 ### 6.5.1 Existing files that will change, and existing tests that will start failing
 
 Worth knowing up front, because these are assertions of *today's* behaviour:
 
-- [`tests/parser/format.test.ts`](tests/parser/format.test.ts) asserts
+- [`tests/parser/format.test.ts`](../tests/parser/format.test.ts) asserts
   `sniffContainer("<html></html>")` is `"unknown"`, and expects a package with
   `xl/workbook.xml` to be refused. Both expectations invert once text sniffing
   and `.xlsx` land.
-- [`tests/parser/docx.test.ts`](tests/parser/docx.test.ts) builds an `.xlsx`
+- [`tests/parser/docx.test.ts`](../tests/parser/docx.test.ts) builds an `.xlsx`
   package to assert it is rejected — same inversion.
-- [`examples/demo/src/App.tsx`](examples/demo/src/App.tsx) has a hand-written
+- [`examples/demo/src/App.tsx`](../examples/demo/src/App.tsx) has a hand-written
   `ACCEPT` list and a `FORMAT_LABELS` map (`Record<string, string>`, so it will
   not fail to compile — it will silently fall back to a generic label). Both
   should come from the library once the extension list is exported, which is
   precisely the drift this analysis proposes to remove.
-- [`scripts/verify-package.mjs`](scripts/verify-package.mjs) type-checks an
+- [`scripts/verify-package.mjs`](../scripts/verify-package.mjs) type-checks an
   example consumer against the built declarations and builds a synthetic `.pptx`
   with `fflate`; new formats need their own consumer snippets and fixtures there,
   and the base bundle assertion from §6.4.
-- [`scripts/prepublish-guard.mjs`](scripts/prepublish-guard.mjs) will need the new
+- [`scripts/prepublish-guard.mjs`](../scripts/prepublish-guard.mjs) will need the new
   extension list and any new public exports.
 
 ### 6.6 The 20 MB / 10 files limits
@@ -493,7 +493,7 @@ Worth knowing up front, because these are assertions of *today's* behaviour:
 | Screenshot limit | Where it belongs |
 | --- | --- |
 | 20 MB per file | Host sets `maxDownloadBytes={20 * 1024 * 1024}` and `limits={{ maxCompressedBytes, maxEntryBytes }}`; the viewer already refuses with `LIMIT_EXCEEDED` |
-| 10 files per upload | Host-side queue; the viewer takes one source. Document the recipe: keep a file list, switch `source`, let `usePresentation` dispose the old media store |
+| 10 files per upload | Host-side queue; the viewer takes one source. Document the recipe: keep a file list, switch `source`, let `useDocument` dispose the old media store |
 | "Any other file type is rejected" | Server policy, but mirror it client-side with the exported extension list/`accept` attribute so the two never disagree |
 
 ---

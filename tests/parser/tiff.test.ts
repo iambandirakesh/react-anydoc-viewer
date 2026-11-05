@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readImageInfo, parseImageDocument } from "../../src/parser/image";
 import { readTiffPages } from "../../src/parser/tiff";
 import { detectFormat } from "../../src/parser/document";
-import { mergeLabels } from "../../src/components/labels";
+import { mergeLabels } from "../../src/labels";
+import { createPageRenderer } from "../../src/components/pageRenderers";
 import { brokenTiff, buildTiff } from "../fixtures/tiff";
 
 describe("TIFF", () => {
@@ -43,7 +44,7 @@ describe("TIFF", () => {
   it("renders a TIFF page through the canvas renderer, not an img", () => {
     const parsed = parseImageDocument(buildTiff({ pages: [{ width: 20, height: 10 }] }));
     const page = parsed.model.slides[0]!;
-    const element = parsed.renderPage?.({
+    const element = createPageRenderer(parsed.content)({
       page,
       width: 20,
       height: 10,

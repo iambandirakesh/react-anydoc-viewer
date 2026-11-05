@@ -14,21 +14,21 @@
  * identifies a document — no extension guessing anywhere in the pipeline.
  */
 
-import type { PresentationModel } from "../model/types";
+import type { DocumentModel } from "../model/types";
 import { DocumentViewerError, type DocumentFormat } from "../errors";
 import { isViewerRenderable, readArchive, sniffImageKind, type ArchiveLimits } from "./archive";
 import { probePackage, sniffContainer, unsupportedFormatMessage } from "./format";
 import { parseImageDocument, unsupportedImageMessage } from "./image";
 import { detectPlainTextKind, parsePlainTextDocument } from "./plaintext";
 import type { PlainTextKind } from "./plaintext/classify";
-import { loadPresentationBytes, normalizeError, type LoadOptions, type ViewerSource } from "./loadPresentation";
-import { parsePresentationArchive } from "./presentation";
+import { loadSourceBytes, normalizeError, type LoadOptions, type ViewerSource } from "./source";
+import { parsePresentationArchive } from "./pptx";
 import { parseDocxArchive, type ParsedDocx } from "./docx";
 import { parseXlsxArchive } from "./xlsx";
 import { parsePdfDocument, type PdfEngine, type PdfJsLoader } from "./pdf";
 import type { MediaStore } from "./media";
-import type { PageRenderer } from "../renderer/pageRenderer";
-import type { ParagraphMeasurer } from "./docx/model";
+import type { PageContent } from "./pageContent";
+import type { MeasurerHandle, ParagraphMeasurer } from "./docx/model";
 
 export interface DocumentParseOptions {
   limits?: Partial<ArchiveLimits>;
@@ -48,14 +48,19 @@ export interface DocumentParseOptions {
   loadPdfJs?: PdfJsLoader;
   /** overrides DOCX text measurement (tests) */
   measureParagraph?: ParagraphMeasurer;
+  /**
+   * Builds the DOCX paragraph measurer. The viewer passes the DOM-backed one;
+   * without it page breaks are estimated, which is all a DOM-less parse can do.
+   */
+  createParagraphMeasurer?: () => MeasurerHandle;
 }
 
 export interface ParsedDocument {
   format: DocumentFormat;
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
-  /** set by formats whose pages are not a shape list (PDF) */
-  renderPage?: PageRenderer;
+  /** set by formats whose pages are not a shape list (PDF, images, text, sheets) */
+  content?: PageContent;
   dispose(): void;
 }
 
@@ -107,6 +112,7 @@ export function parsePackageBytes(bytes: Uint8Array, options: DocumentParseOptio
       limits: options.limits,
       maxDiagnostics: options.maxDiagnostics,
       ...(options.measureParagraph ? { measure: options.measureParagraph } : {}),
+      ...(options.createParagraphMeasurer ? { createMeasurer: options.createParagraphMeasurer } : {}),
     });
     return { format: "docx", model: parsed.model, media: parsed.media, dispose: parsed.dispose };
   }
@@ -119,7 +125,7 @@ export function parsePackageBytes(bytes: Uint8Array, options: DocumentParseOptio
       format: "xlsx",
       model: parsed.model,
       media: parsed.media,
-      renderPage: parsed.renderPage,
+      content: parsed.content,
       dispose: parsed.dispose,
     };
   }
@@ -134,7 +140,7 @@ export async function loadDocument(
   options: LoadOptions = {},
 ): Promise<ParsedDocument> {
   try {
-    const bytes = await loadPresentationBytes(source, options);
+    const bytes = await loadSourceBytes(source, options);
     return await parseDocumentBytes(bytes, options);
   } catch (error) {
     throw normalizeError(error);
@@ -156,7 +162,7 @@ export async function parseDocumentBytes(
         format: "image",
         model: parsed.model,
         media: parsed.media,
-        renderPage: parsed.renderPage,
+        content: parsed.content,
         dispose: parsed.dispose,
       };
     }
@@ -176,7 +182,7 @@ export async function parseDocumentBytes(
         format: parsed.format,
         model: parsed.model,
         media: parsed.media,
-        renderPage: parsed.renderPage,
+        content: parsed.content,
         dispose: parsed.dispose,
       };
     }
@@ -194,7 +200,7 @@ export async function parseDocumentBytes(
       format: "pdf",
       model: parsed.model,
       media: parsed.media,
-      renderPage: parsed.renderPage,
+      content: parsed.content,
       dispose: parsed.dispose,
     };
   }

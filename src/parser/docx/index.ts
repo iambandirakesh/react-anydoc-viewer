@@ -3,24 +3,24 @@
  *
  * The pipeline mirrors the presentation parser: read the parts, resolve the
  * relationships, flatten the body into blocks, paginate, and hand back the same
- * `PresentationModel` the slide renderer already understands. A page of a Word
+ * `DocumentModel` the slide renderer already understands. A page of a Word
  * document is therefore just a slide whose shapes are paragraphs, tables and
  * pictures, so navigation, thumbnails, zoom and presentation mode all work
  * without knowing what a `.docx` is.
  */
 
-import type { PresentationModel, SlideModel } from "../../model/types";
+import type { DocumentModel, PageModel } from "../../model/types";
 import { DocumentViewerError } from "../../errors";
 import { readText, type Archive, type ArchiveLimits } from "../archive";
 import { child, find, parseXml, type XmlNode } from "../xml";
 import { parseRelationships, relsPartNameFor, relTypeName, type RelationshipMap } from "../relationships";
 import { createMediaStore, type MediaStore } from "../media";
-import { DEFAULT_COLOR_MAP, createEmptyTheme } from "../theme";
+import { DEFAULT_COLOR_MAP, createEmptyTheme } from "../drawingml/theme";
 import { twipsToEmu } from "../units";
 import { Diagnostics, DEFAULT_MAX_DIAGNOSTICS } from "../diagnostics";
-import { createParagraphMeasurer, type MeasurerHandle } from "../../renderer/measureParagraph";
+import { createEstimateMeasurer } from "./measure";
 import { layoutDocument, type PageGeometry } from "./layout";
-import type { DocxBlock, ParagraphMeasurer } from "./model";
+import type { DocxBlock, MeasurerHandle, ParagraphMeasurer } from "./model";
 import { parseTableBlock, type TableParseContext } from "./table";
 import { parseParagraphBlocks, type DocxTextContext } from "./text";
 import { buildStyles } from "./styles";
@@ -32,12 +32,14 @@ const DEFAULT_MARGIN_TWIPS = 1_440;
 export interface DocxParseOptions {
   limits?: Partial<ArchiveLimits>;
   maxDiagnostics?: number;
-  /** overrides height measurement; the DOM measurer is used by default */
+  /** overrides height measurement outright (tests) */
   measure?: ParagraphMeasurer;
+  /** builds the measurer; heights are estimated when absent */
+  createMeasurer?: () => MeasurerHandle;
 }
 
 export interface ParsedDocx {
-  model: PresentationModel;
+  model: DocumentModel;
   media: MediaStore;
   dispose(): void;
 }
@@ -121,7 +123,7 @@ function readCoreProperties(archive: Archive): { title: string | null; author: s
   return { title: text("title"), author: text("creator") };
 }
 
-function emptyPage(index: number, part: string): SlideModel {
+function emptyPage(index: number, part: string): PageModel {
   return {
     index,
     partName: `${part}#page${index + 1}`,
@@ -193,7 +195,7 @@ export function parseDocxArchive(archive: Archive, options: DocxParseOptions = {
 
   const measurer: MeasurerHandle = options.measure
     ? { measure: options.measure, dispose: () => undefined, kind: "layout" }
-    : createParagraphMeasurer();
+    : (options.createMeasurer ?? createEstimateMeasurer)();
   if (!options.measure && measurer.kind === "estimate") {
     diagnostics.add({
       severity: "info",
@@ -280,7 +282,7 @@ export function parseDocxArchive(archive: Archive, options: DocxParseOptions = {
   const media = createMediaStore(archive);
   const slides = pages.length > 0 ? pages : [emptyPage(0, mainPart)];
 
-  const model: PresentationModel = {
+  const model: DocumentModel = {
     width: geometry.widthEmu,
     height: geometry.heightEmu,
     slides,

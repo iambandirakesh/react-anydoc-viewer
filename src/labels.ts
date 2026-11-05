@@ -1,4 +1,4 @@
-import type { ViewerLabels } from "../types/public";
+import type { ViewerLabels } from "./types/public";
 
 export const DEFAULT_LABELS: ViewerLabels = {
   previous: "Previous slide",
@@ -17,6 +17,8 @@ export const DEFAULT_LABELS: ViewerLabels = {
   present: "Present from this slide",
   exitPresentation: "Exit presentation",
   presentationHint: "Space to advance · Esc to exit",
+  presentSheet: "Present",
+  sheetPresentationHint: "Switch sheets with the tabs · Esc to exit",
   toggleThumbnails: "Toggle page thumbnails",
   thumbnails: "Page thumbnails",
   slideOf: (current, total) => `${current} / ${total}`,

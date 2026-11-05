@@ -8,7 +8,7 @@
 
 import type { Fill, LineStyle, RGBA, Shadow } from "../model/types";
 import { emuToPx } from "../parser/units";
-import { rgbaToCss, rgbaToHex } from "../parser/color";
+import { rgbaToCss, rgbaToHex } from "../parser/drawingml/color";
 
 export interface SvgPaint {
   fill: string;

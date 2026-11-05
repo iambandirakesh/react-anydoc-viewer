@@ -15,9 +15,9 @@ import type {
   Shadow,
   ThemeData,
   Transform,
-} from "../model/types";
-import { attr, attrBool, attrNum, child, children, relAttr, type XmlNode } from "./xml";
-import { angleUnitsToDegrees, clamp, percentageToRatio } from "./units";
+} from "../../model/types";
+import { attr, attrBool, attrNum, child, children, relAttr, type XmlNode } from "../xml";
+import { angleUnitsToDegrees, clamp, percentageToRatio } from "../units";
 import { isColorElement, resolveColorElement, themeColor } from "./color";
 import { isSupportedPreset } from "./geometry";
 import { DEFAULT_COLOR_MAP } from "./theme";

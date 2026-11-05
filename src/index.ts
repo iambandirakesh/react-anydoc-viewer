@@ -40,7 +40,7 @@ export {
   /** @deprecated Use {@link isDocumentViewerError}. */
   isPPTViewerError,
 } from "./errors";
-export { DEFAULT_LABELS } from "./components/labels";
+export { DEFAULT_LABELS } from "./labels";
 export {
   ACCEPT_ATTRIBUTE,
   FORMAT_DESCRIPTORS,
@@ -51,7 +51,7 @@ export {
 } from "./formats";
 export type { FormatDescriptor } from "./formats";
 export { DEFAULT_ARCHIVE_LIMITS } from "./parser/archive";
-export { supportedPresetNames } from "./parser/geometry";
+export { supportedPresetNames } from "./parser/drawingml/geometry";
 /** Which pdf.js build this environment needs; pick `pdfWorkerSrc` to match it. */
 export { detectPdfEngine } from "./parser/pdf";
 

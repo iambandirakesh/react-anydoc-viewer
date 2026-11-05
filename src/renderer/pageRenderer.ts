@@ -10,13 +10,13 @@
  */
 
 import type { ReactNode } from "react";
-import type { SlideModel } from "../model/types";
+import type { PageModel } from "../model/types";
 import type { MediaStore } from "../parser/media";
 import type { ViewerLabels } from "../types/public";
 
 export interface PageRenderContext {
   /** the page to draw; `page.index` is 0-based */
-  page: SlideModel;
+  page: PageModel;
   /** natural page size in CSS px, before the viewer's scale is applied */
   width: number;
   height: number;
@@ -38,5 +38,4 @@ export interface PageRenderContext {
 
 export interface PageRenderer {
   (context: PageRenderContext): ReactNode;
-  worksheetPages?: readonly import("../parser/xlsx/model").SheetPageData[];
 }
